@@ -3,8 +3,7 @@
 import * as chrono from "chrono-node";
 import { TodoistApi } from "@doist/todoist-api-typescript";
 import { auth } from "@/lib/auth";
-import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { applyDashboardToggle } from "@/lib/sync/orchestrator";
 import { syncTodoist } from "@/lib/sync/todoist";
 
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
@@ -64,8 +63,7 @@ export async function quickAddAction(raw: string): Promise<QuickAddResult> {
   }
 }
 
-// Toggle a task's done state. Updates the source-of-truth (Notion or Todoist),
-// the linked counterpart if any, and the local cache.
+// Toggle a task's done state. Updates Todoist + Notion APIs, linked mirrors, cache.
 export async function toggleTaskDoneAction(args: {
   notionPageId: string | null;
   todoistTaskId: string | null;
@@ -74,20 +72,17 @@ export async function toggleTaskDoneAction(args: {
   const session = await auth();
   if (!session) return { ok: false, error: "Not signed in" } as const;
 
-  // M3 will own the propagation logic. For now we only mutate the local cache so
-  // the dashboard reflects the click; the next webhook tick reconciles
-  // with sources. This keeps M2 self-contained while M3 is in progress.
-  if (args.notionPageId) {
-    await db
-      .update(schema.notionPages)
-      .set({ status: args.done ? "Done" : "Not started" })
-      .where(eq(schema.notionPages.id, args.notionPageId));
+  if (args.notionPageId && !process.env.NOTION_TOKEN) {
+    return { ok: false, error: "NOTION_TOKEN missing" } as const;
   }
-  if (args.todoistTaskId) {
-    await db
-      .update(schema.todoistTasks)
-      .set({ checked: args.done })
-      .where(eq(schema.todoistTasks.id, args.todoistTaskId));
+  if (args.todoistTaskId && !process.env.TODOIST_TOKEN) {
+    return { ok: false, error: "TODOIST_TOKEN missing" } as const;
   }
-  return { ok: true } as const;
+
+  try {
+    await applyDashboardToggle(args);
+    return { ok: true } as const;
+  } catch (e) {
+    return { ok: false, error: (e as Error).message } as const;
+  }
 }

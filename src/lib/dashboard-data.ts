@@ -135,7 +135,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const todoistProjectById = new Map(todoistProjects.map((p) => [p.id, p]));
-  const todoistTaskById = new Map(tasks.map((t) => [t.id, t]));
   const linkByNotion = new Map(links.map((l) => [l.notionPageId, l]));
   const linkByTodoist = new Map(links.map((l) => [l.todoistTaskId, l]));
   const pageById = new Map(pages.map((p) => [p.id, p]));

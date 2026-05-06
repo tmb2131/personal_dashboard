@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local tooling / worktrees (avoid linting generated .next under .claude if someone runs eslint .)
+    ".claude/**",
+    "node_modules/**",
   ]),
 ]);
 

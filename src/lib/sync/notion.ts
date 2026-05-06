@@ -66,6 +66,56 @@ function readText(p: AnyProp, key: string): string | null {
   return s || null;
 }
 
+export type NotionTodoRowInput = {
+  id: string;
+  archived: boolean;
+  properties: AnyProp;
+  raw: unknown;
+} & { syncedAt?: Date };
+
+/** Map a To-Dos data-source row or retrieved page into a DB insert shape. */
+export function mapTodoPageRow(p: NotionTodoRowInput, syncedAt: Date) {
+  const props = p.properties;
+  const date = readDate(props, "Date");
+  const deadline = readDate(props, "Deadline");
+  return {
+    id: p.id,
+    categoryId: readRelationFirst(props, "Category"),
+    title: readTitle(props) || "(untitled)",
+    status: (readStatus(props, "Status") ?? null) as never,
+    dateStart: date.start,
+    dateEnd: date.end,
+    dateIsDatetime: date.isDatetime,
+    deadline: deadline.start,
+    priority: (readSelect(props, "Priority") ?? null) as never,
+    focus: (readSelect(props, "Focus") ?? null) as never,
+    tripStatus: (readStatus(props, "Trip Status") ?? null) as never,
+    parentId: readRelationFirst(props, "Parent task"),
+    keyNextStep: readText(props, "Key Next Step"),
+    nextSteps: readText(props, "Next Steps"),
+    notes: readText(props, "Notes"),
+    archived: p.archived || readCheckbox(props, "Archived"),
+    ignore: readCheckbox(props, "Ignore"),
+    raw: p.raw,
+    updatedAt: syncedAt,
+    lastSyncedAt: syncedAt,
+  };
+}
+
+function mapCategoryRow(
+  c: { id: string; archived: boolean; properties: AnyProp; raw?: unknown },
+  syncedAt: Date,
+) {
+  return {
+    id: c.id,
+    title: readTitle(c.properties) || "(untitled)",
+    archived: c.archived,
+    raw: (c.raw ?? c) as unknown,
+    updatedAt: syncedAt,
+    lastSyncedAt: syncedAt,
+  };
+}
+
 type DataSourceQueryResp = {
   results: { id: string; archived: boolean; properties: AnyProp }[];
   next_cursor: string | null;
@@ -105,14 +155,12 @@ export async function syncNotion() {
     await db
       .insert(schema.notionCategories)
       .values(
-        categories.map((c) => ({
-          id: c.id,
-          title: readTitle(c.properties) || "(untitled)",
-          archived: c.archived,
-          raw: c as unknown,
-          updatedAt: now,
-          lastSyncedAt: now,
-        })),
+        categories.map((c) =>
+          mapCategoryRow(
+            { id: c.id, archived: c.archived, properties: c.properties, raw: c },
+            now,
+          ),
+        ),
       )
       .onConflictDoUpdate({
         target: schema.notionCategories.id,
@@ -130,33 +178,9 @@ export async function syncNotion() {
     await db
       .insert(schema.notionPages)
       .values(
-        todos.map((p) => {
-          const props = p.properties;
-          const date = readDate(props, "Date");
-          const deadline = readDate(props, "Deadline");
-          return {
-            id: p.id,
-            categoryId: readRelationFirst(props, "Category"),
-            title: readTitle(props) || "(untitled)",
-            status: (readStatus(props, "Status") ?? null) as never,
-            dateStart: date.start,
-            dateEnd: date.end,
-            dateIsDatetime: date.isDatetime,
-            deadline: deadline.start,
-            priority: (readSelect(props, "Priority") ?? null) as never,
-            focus: (readSelect(props, "Focus") ?? null) as never,
-            tripStatus: (readStatus(props, "Trip Status") ?? null) as never,
-            parentId: readRelationFirst(props, "Parent task"),
-            keyNextStep: readText(props, "Key Next Step"),
-            nextSteps: readText(props, "Next Steps"),
-            notes: readText(props, "Notes"),
-            archived: p.archived || readCheckbox(props, "Archived"),
-            ignore: readCheckbox(props, "Ignore"),
-            raw: p as unknown,
-            updatedAt: now,
-            lastSyncedAt: now,
-          };
-        }),
+        todos.map((p) =>
+          mapTodoPageRow({ id: p.id, archived: p.archived, properties: p.properties, raw: p }, now),
+        ),
       )
       .onConflictDoUpdate({
         target: schema.notionPages.id,
@@ -184,5 +208,130 @@ export async function syncNotion() {
       });
   }
 
+  await db
+    .insert(schema.syncState)
+    .values({
+      source: "notion",
+      lastFullSyncAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.syncState.source,
+      set: { lastFullSyncAt: now },
+    });
+
   return { categories: categories.length, todos: todos.length };
+}
+
+/** Upsert a single page retrieved from the Notion API (todo vs category by presence of `Status`). */
+export async function syncNotionEntitiesByIds(
+  pageIds: string[],
+  hintById?: Map<string, "todo" | "category">,
+) {
+  const now = new Date();
+  let todos = 0;
+  let categories = 0;
+  const errors: string[] = [];
+  const c = client();
+
+  for (const pageId of pageIds) {
+    try {
+      const hint = hintById?.get(pageId);
+      const page = await c.pages.retrieve({ page_id: pageId });
+      if (!("properties" in page) || !page.properties) continue;
+      const props = page.properties as AnyProp;
+
+      const isTodo =
+        hint === "todo" ||
+        (hint !== "category" &&
+          Object.prototype.hasOwnProperty.call(props, "Status"));
+
+      if (isTodo) {
+        const row = mapTodoPageRow(
+          {
+            id: page.id,
+            archived: Boolean(page.archived),
+            properties: props,
+            raw: page,
+          },
+          now,
+        );
+        await db
+          .insert(schema.notionPages)
+          .values(row)
+          .onConflictDoUpdate({
+            target: schema.notionPages.id,
+            set: {
+              categoryId: sql`excluded.category_id`,
+              title: sql`excluded.title`,
+              status: sql`excluded.status`,
+              dateStart: sql`excluded.date_start`,
+              dateEnd: sql`excluded.date_end`,
+              dateIsDatetime: sql`excluded.date_is_datetime`,
+              deadline: sql`excluded.deadline`,
+              priority: sql`excluded.priority`,
+              focus: sql`excluded.focus`,
+              tripStatus: sql`excluded.trip_status`,
+              parentId: sql`excluded.parent_id`,
+              keyNextStep: sql`excluded.key_next_step`,
+              nextSteps: sql`excluded.next_steps`,
+              notes: sql`excluded.notes`,
+              archived: sql`excluded.archived`,
+              ignore: sql`excluded.ignore`,
+              raw: sql`excluded.raw`,
+              updatedAt: sql`excluded.updated_at`,
+              lastSyncedAt: sql`excluded.last_synced_at`,
+            },
+          });
+        todos++;
+      } else {
+        const row = mapCategoryRow(
+          {
+            id: page.id,
+            archived: Boolean(page.archived),
+            properties: props,
+            raw: page,
+          },
+          now,
+        );
+        await db
+          .insert(schema.notionCategories)
+          .values(row)
+          .onConflictDoUpdate({
+            target: schema.notionCategories.id,
+            set: {
+              title: sql`excluded.title`,
+              archived: sql`excluded.archived`,
+              raw: sql`excluded.raw`,
+              updatedAt: sql`excluded.updated_at`,
+              lastSyncedAt: sql`excluded.last_synced_at`,
+            },
+          });
+        categories++;
+      }
+    } catch (e) {
+      errors.push(`${pageId}: ${(e as Error).message}`);
+    }
+  }
+
+  await db
+    .insert(schema.syncState)
+    .values({ source: "notion", lastIncrementalAt: now })
+    .onConflictDoUpdate({
+      target: schema.syncState.source,
+      set: { lastIncrementalAt: now },
+    });
+
+  return { todos, categories, errors };
+}
+
+export async function updateNotionTodoStatus(
+  pageId: string,
+  status: "Not started" | "In progress" | "Done",
+) {
+  await client().pages.update({
+    page_id: pageId,
+    properties: {
+      Status: { status: { name: status } },
+    },
+  });
 }

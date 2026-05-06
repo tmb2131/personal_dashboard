@@ -12,20 +12,21 @@ The plan and architecture decisions live in [`/Users/tombrosens/.claude/plans/i-
 - **Signed webhook routes** for fan-in
 - `@notionhq/client` · `@doist/todoist-api-typescript` (v1) · `googleapis`
 
-## What's done (M0–M2 + M5 layout)
+## What's done (M0–M6)
 
 - Project scaffold, Drizzle schema, Auth.js with Google + email allowlist.
-- Notion sync (To-Dos + Categories) → Postgres.
-- Google Calendar sync (Tom + Sriya, 14-day window) → Postgres.
-- Todoist sync (tasks + projects) → Postgres.
+- Notion sync (To-Dos + Categories) → Postgres (full + incremental page upserts for webhooks).
+- Google Calendar sync (Tom + Sriya, 14-day rolling window) → Postgres; optional **incremental sync** via stored `syncToken`, **push watches** + `/api/webhooks/gcal`, and **daily channel renewal** (`/api/cron/gcal-renew` + `vercel.json` schedule when deployed on Vercel).
+- Todoist sync (tasks + projects) → Postgres (full + targeted task upserts for webhooks).
 - Linking model: `task_links` and `category_project_links` tables, plus a heuristic title-match backfill.
-- Dashboard read path: today's calendar, unified task list (Notion ⊕ Todoist deduped via links), active projects / upcoming travel / life areas footer, quick-add.
+- **M3 — Orchestrator:** link-aware mirroring (`lib/sync/orchestrator.ts`), `audit_log`, recurring Todoist instance repair when links bump to a new task id.
+- **M4 — Writes:** dashboard task checkbox calls Notion + Todoist APIs and updates `task_links` / local cache (`applyDashboardToggle`).
+- **M6:** webhook payload size limits + structured `audit_log`; installable PWA manifest (`src/app/manifest.ts` + `public/icon.svg`); backups documented below.
 
-## What's next (M3–M6, deferred to follow-up sessions)
+## Backups (Neon + optional `pg_dump`)
 
-- M3 — sync orchestrator (real propagation rules, conflict resolution, recurring-task instance bumping, full webhook handling beyond the current "naive re-sync" stubs)
-- M4 — write actions wired all the way through (the dashboard checkbox currently only updates the local cache; the next webhook tick syncs sources)
-- M6 — hardening, PWA polish, backups
+- **Neon:** use the Neon console to enable **point-in-time recovery** (plan-dependent) and use **branches** for ad-hoc snapshots before risky changes.
+- **Self-managed dumps:** from a trusted machine with network access to Postgres, run `pg_dump "$DATABASE_URL" > backup.sql` on a schedule; keep the file outside the repo and rotate credentials if a dump leaks.
 
 ## Setup (do this once)
 
@@ -75,9 +76,11 @@ vercel --prod
 
 - **Notion:** [my-integrations → your integration → Webhooks](https://www.notion.so/my-integrations) → add subscription pointing at `https://<your-domain>/api/webhooks/notion`. Notion will POST a `verification_token` on first ping; the route echoes it. Copy the secret it shows into `NOTION_WEBHOOK_SECRET`.
 - **Todoist:** [Todoist App Console](https://developer.todoist.com/appconsole.html) → your app → Webhooks → URL `https://<your-domain>/api/webhooks/todoist`, events `item:*` and `project:*`. Copy the secret into `TODOIST_WEBHOOK_SECRET`.
-- **Google Calendar:** uses watch-channels; channel-renewal cron lands in M3.
+- **Google Calendar push:** watches call `https://<your-domain>/api/webhooks/gcal`. Renewals run via **Vercel Cron** (`/api/cron/gcal-renew` daily) or manually in dev. Requires `GOOGLE_REFRESH_TOKEN` (and `APP_URL` / `VERCEL_URL` for the watch address). Optionally set `CRON_SECRET` and call the cron route with `Authorization: Bearer <secret>`.
 
 Without webhooks, use **Run sync now** on the dashboard (or a signed-in `POST` to `/api/sync/run`) periodically to refresh the cache.
+
+After changing the Drizzle schema (e.g. new `sync_state.resource_id` column), run `npx drizzle-kit push` against your database.
 
 ## Repo layout
 
@@ -91,14 +94,17 @@ src/
     api/
       auth/[...nextauth]/    — Auth.js handlers
       sync/run/              — manual full-sync trigger
-      webhooks/{notion,todoist}/ — HMAC-verified webhook receivers (M3 will deepen)
+      webhooks/{notion,todoist,gcal}/ — HMAC-verified (Notion/Todoist); GCal push uses Google headers
+      cron/gcal-renew/       — renew Calendar push channels (cron + manual)
   lib/
     auth.ts                  — Auth.js config + allowlist
     db/{index,schema}.ts     — Drizzle
     sync/
       notion.ts              — pulls To-Dos + Categories
       todoist.ts             — pulls tasks + projects
-      gcal.ts                — pulls events for configured calendars
+      gcal.ts                — Calendar window + incremental + watch helpers
+      orchestrator.ts        — link mirroring, recurring repair, dashboard toggle
+      audit.ts               — append-only audit_log writer
       mappings.ts            — Notion ↔ Todoist field translation (single source of truth)
       link-backfill.ts       — heuristic title-match linker
     dashboard-data.ts        — server-side data composition for the page

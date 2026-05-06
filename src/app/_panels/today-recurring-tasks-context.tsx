@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 const STORAGE_KEY = "personal-dashboard-show-recurring-today-tasks";
 
@@ -20,15 +12,14 @@ type TodayRecurringTasksContextValue = {
 const TodayRecurringTasksContext = createContext<TodayRecurringTasksContextValue | null>(null);
 
 export function TodayRecurringTasksProvider({ children }: { children: ReactNode }) {
-  const [showRecurringTodayTasks, setShowState] = useState(false);
-
-  useEffect(() => {
+  const [showRecurringTodayTasks, setShowState] = useState(() => {
+    if (typeof window === "undefined") return false;
     try {
-      if (localStorage.getItem(STORAGE_KEY) === "1") setShowState(true);
+      return localStorage.getItem(STORAGE_KEY) === "1";
     } catch {
-      /* ignore */
+      return false;
     }
-  }, []);
+  });
 
   const setShowRecurringTodayTasks = useCallback((show: boolean) => {
     setShowState(show);

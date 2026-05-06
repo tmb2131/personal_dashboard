@@ -161,6 +161,8 @@ export const syncState = pgTable("sync_state", {
   source: text("source").primaryKey(), // 'notion' | 'todoist' | `gcal:${calendarId}`
   cursor: text("cursor"), // sync_token / nextSyncToken / page cursor
   channelId: text("channel_id"), // for gcal push channels
+  /** Google channel `resourceId` (required to stop a watch) */
+  resourceId: text("resource_id"),
   channelExpiresAt: timestamp("channel_expires_at", { withTimezone: true }),
   lastFullSyncAt: timestamp("last_full_sync_at", { withTimezone: true }),
   lastIncrementalAt: timestamp("last_incremental_at", { withTimezone: true }),

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/gcal-renew",
+      "schedule": "0 5 * * *"
+    }
+  ]
+}

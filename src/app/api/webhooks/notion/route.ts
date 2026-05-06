@@ -9,6 +9,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const body = await req.text();
 
+  // TEMPORARY: delete after Notion subscription is verified — prints full payload in Vercel function logs.
+  console.log("[notion-webhook DEBUG] POST body:", body);
+
   const secret = process.env.NOTION_WEBHOOK_SECRET;
   if (secret) {
     const sig = req.headers.get("x-notion-signature") ?? "";

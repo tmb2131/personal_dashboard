@@ -1,36 +1,110 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal Dashboard
 
-## Getting Started
+One calm page that brings together Notion (projects, tasks, travel, life areas), Todoist (recurring/one-off doing), and Google Calendar (Tom + Sriya). Two-way syncs Notion tasks ↔ Todoist tasks so they stay in lockstep.
 
-First, run the development server:
+The plan and architecture decisions live in [`/Users/tombrosens/.claude/plans/i-want-to-build-snuggly-backus.md`](../../.claude/plans/i-want-to-build-snuggly-backus.md). Read that first.
+
+## Stack
+
+- **Next.js 16** App Router · TypeScript · Tailwind v4 · Geist
+- **Neon Postgres** + **Drizzle ORM** (synced cache of all three sources)
+- **Auth.js v5** with Google + email allowlist
+- **Vercel Cron** + signed webhook routes for fan-in
+- `@notionhq/client` · `@doist/todoist-api-typescript` (v1) · `googleapis`
+
+## What's done (M0–M2 + M5 layout)
+
+- Project scaffold, Drizzle schema, Auth.js with Google + email allowlist.
+- Notion sync (To-Dos + Categories) → Postgres.
+- Google Calendar sync (Tom + Sriya, 14-day window) → Postgres.
+- Todoist sync (tasks + projects) → Postgres.
+- Linking model: `task_links` and `category_project_links` tables, plus a heuristic title-match backfill.
+- Dashboard read path: today's calendar, unified task list (Notion ⊕ Todoist deduped via links), active projects / upcoming travel / life areas footer, quick-add.
+
+## What's next (M3–M6, deferred to follow-up sessions)
+
+- M3 — sync orchestrator (real propagation rules, conflict resolution, recurring-task instance bumping, full webhook handling beyond the current "naive re-sync" stubs)
+- M4 — write actions wired all the way through (the dashboard checkbox currently only updates the local cache; the next webhook tick syncs sources)
+- M6 — hardening, PWA polish, backups
+
+## Setup (do this once)
+
+### 1. Credentials you need to create
+
+| What | Where | What to grab |
+|---|---|---|
+| Postgres | [neon.tech](https://neon.tech) → new project | Pooled connection string → `DATABASE_URL` |
+| Google OAuth | [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth 2.0 Client ID (Web app). Authorized redirect: `http://localhost:3000/api/auth/callback/google` (and the Vercel domain). Add scopes `calendar.readonly`. | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| Notion integration | [notion.so/my-integrations](https://www.notion.so/my-integrations) → New internal integration. Then **share the Tasks page (or the parent "T&S Personal Home") with the integration** so it can read the To-Dos and Categories collections. | `NOTION_TOKEN` |
+| Todoist | Todoist Settings → Integrations → Developer → "Copy API token" | `TODOIST_TOKEN` |
+| Auth secret | `openssl rand -base64 32` | `AUTH_SECRET` |
+
+### 2. Configure environment
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
+# fill in the values from step 1
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Defaults already set in `.env.example`:
+- `NOTION_TODOS_DATA_SOURCE_ID` = `e1123787-…` (the To-Dos collection)
+- `NOTION_CATEGORIES_DATA_SOURCE_ID` = `69b5b17a-…` (the Categories collection)
+- `GCAL_CALENDAR_IDS` = `thomas.brosens@gmail.com,sriya.sundaresan@gmail.com`
+- `ALLOWED_EMAIL` = `thomas.brosens@gmail.com`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Run migrations + start dev
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npx drizzle-kit push     # creates tables on Neon
+npm run dev              # starts on http://localhost:3000
+```
 
-## Learn More
+Sign in with Google, then click **"Run sync now"** on the empty-state screen (or `curl -X POST http://localhost:3000/api/sync/run` from the terminal — but you must be signed in for it to work, so the button is easier).
 
-To learn more about Next.js, take a look at the following resources:
+### 4. Deploy to Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+vercel link
+vercel env add DATABASE_URL production
+# …repeat for every entry in .env.example
+vercel --prod
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The cron in `vercel.json` runs `/api/cron/full-sync` every 30 minutes as a drift safety net.
 
-## Deploy on Vercel
+## Webhooks (do these once Vercel is live, optional for local dev)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Notion:** [my-integrations → your integration → Webhooks](https://www.notion.so/my-integrations) → add subscription pointing at `https://<your-domain>/api/webhooks/notion`. Notion will POST a `verification_token` on first ping; the route echoes it. Copy the secret it shows into `NOTION_WEBHOOK_SECRET`.
+- **Todoist:** [Todoist App Console](https://developer.todoist.com/appconsole.html) → your app → Webhooks → URL `https://<your-domain>/api/webhooks/todoist`, events `item:*` and `project:*`. Copy the secret into `TODOIST_WEBHOOK_SECRET`.
+- **Google Calendar:** uses watch-channels; channel-renewal cron lands in M3.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Without webhooks the cron job (every 30 min) keeps the cache fresh enough for daily use.
+
+## Repo layout
+
+```
+src/
+  app/
+    page.tsx                 — dashboard (RSC)
+    actions.ts               — server actions for quick-add + toggle-done
+    sign-in/page.tsx
+    _panels/                 — TodayCalendar, TaskList, FooterStrip, QuickAdd, Clock
+    api/
+      auth/[...nextauth]/    — Auth.js handlers
+      sync/run/              — manual full-sync trigger
+      cron/full-sync/        — Vercel Cron target
+      webhooks/{notion,todoist}/ — HMAC-verified webhook receivers (M3 will deepen)
+  lib/
+    auth.ts                  — Auth.js config + allowlist
+    db/{index,schema}.ts     — Drizzle
+    sync/
+      notion.ts              — pulls To-Dos + Categories
+      todoist.ts             — pulls tasks + projects
+      gcal.ts                — pulls events for configured calendars
+      mappings.ts            — Notion ↔ Todoist field translation (single source of truth)
+      link-backfill.ts       — heuristic title-match linker
+    dashboard-data.ts        — server-side data composition for the page
+    utils.ts                 — cn(), date helpers
+  proxy.ts                   — auth gate (was middleware.ts; renamed for Next 16)
+```

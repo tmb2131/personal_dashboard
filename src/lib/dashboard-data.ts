@@ -1,7 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { bucketKey, makeDayBuckets, type DayBucket } from "@/lib/utils";
+import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
 export type NotionPage = InferSelectModel<typeof schema.notionPages>;
@@ -288,10 +288,13 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     all: nonTripNonArea,
   };
 
-  // ----- Trips
+  // ----- Trips (Travel/Events only; include Done; start date today or later)
   const upcomingTrips = allProjects
-    .filter(isTrip)
-    .filter((p) => p.status !== "Done")
+    .filter((p) => isTravelEventsCategory(p.categoryTitle))
+    .filter(
+      (p) =>
+        p.dateStart != null && startOfDay(p.dateStart).getTime() >= todayStart.getTime(),
+    )
     .sort((a, b) => {
       const ad = a.dateStart?.getTime() ?? Number.MAX_SAFE_INTEGER;
       const bd = b.dateStart?.getTime() ?? Number.MAX_SAFE_INTEGER;

@@ -46,6 +46,17 @@ export function shortCategoryLabel(name: string | null | undefined): string {
   return name.replace(/\s*\([^)]*\)\s*/g, "").split("/")[0].trim().toUpperCase();
 }
 
+/** Lowercase category title with collapsed spaces and slash-normalized segments (e.g. `travel/events`). */
+export function normalizeCategoryKey(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const collapsed = name.toLowerCase().trim().replace(/\s+/g, " ");
+  return collapsed.replace(/\s*\/\s*/g, "/");
+}
+
+export function isTravelEventsCategory(name: string | null | undefined): boolean {
+  return normalizeCategoryKey(name) === "travel/events";
+}
+
 export type DayBucket = {
   key: string;
   label: string;

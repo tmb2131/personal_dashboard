@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ManualSyncButton } from "./manual-sync-button";
 
 function relativeAgo(d: Date | null, now: Date): string {
   if (!d) return "never";
@@ -33,9 +34,12 @@ export function FooterStrip({
   });
 
   return (
-    <footer className="flex items-center gap-4 border-t border-border px-8 py-3 text-[11px] text-fg-subtle">
-      <span>
-        Synced <span className="tabular-nums">{relativeAgo(lastSyncAt, now)}</span>
+    <footer className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-8 py-3 text-[11px] text-fg-subtle">
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>
+          Synced <span className="tabular-nums">{relativeAgo(lastSyncAt, now)}</span>
+        </span>
+        <ManualSyncButton size="sm" />
       </span>
       <span>·</span>
       <KeyHint k="⌘K" label="jump" />

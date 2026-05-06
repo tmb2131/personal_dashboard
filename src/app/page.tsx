@@ -6,6 +6,7 @@ import { Next3Days } from "./_panels/next-3-days";
 import { Projects } from "./_panels/projects";
 import { UpcomingTrips } from "./_panels/upcoming-trips";
 import { LifeAreas } from "./_panels/life-areas";
+import { ManualSyncButton } from "./_panels/manual-sync-button";
 import { TodayRecurringTasksProvider } from "./_panels/today-recurring-tasks-context";
 import { loadDashboardSafe } from "@/lib/dashboard-data";
 
@@ -55,11 +56,9 @@ npm run dev`}
               <p className="text-sm text-fg-muted">
                 Run an initial sync to pull your Notion, Todoist and Google Calendar data.
               </p>
-              <form action="/api/sync/run" method="post">
-                <button className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-bg px-4 text-sm hover:bg-bg-elevated">
-                  Run sync now
-                </button>
-              </form>
+              <div className="flex flex-col items-center gap-2">
+                <ManualSyncButton size="md" />
+              </div>
             <p className="text-[11px] text-fg-subtle">
               (Or trigger from the terminal:{" "}
               <code className="font-mono">curl -X POST localhost:3000/api/sync/run</code>)

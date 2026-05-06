@@ -4,8 +4,7 @@ export default auth((req) => {
   const isPublic =
     req.nextUrl.pathname.startsWith("/sign-in") ||
     req.nextUrl.pathname.startsWith("/api/auth") ||
-    req.nextUrl.pathname.startsWith("/api/webhooks") ||
-    req.nextUrl.pathname.startsWith("/api/cron");
+    req.nextUrl.pathname.startsWith("/api/webhooks");
 
   if (isPublic) return;
   if (req.auth) return;

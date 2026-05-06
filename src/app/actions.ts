@@ -75,7 +75,7 @@ export async function toggleTaskDoneAction(args: {
   if (!session) return { ok: false, error: "Not signed in" } as const;
 
   // M3 will own the propagation logic. For now we only mutate the local cache so
-  // the dashboard reflects the click; the next webhook tick (or cron) reconciles
+  // the dashboard reflects the click; the next webhook tick reconciles
   // with sources. This keeps M2 self-contained while M3 is in progress.
   if (args.notionPageId) {
     await db

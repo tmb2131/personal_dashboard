@@ -9,7 +9,7 @@ The plan and architecture decisions live in [`/Users/tombrosens/.claude/plans/i-
 - **Next.js 16** App Router · TypeScript · Tailwind v4 · Geist
 - **Neon Postgres** + **Drizzle ORM** (synced cache of all three sources)
 - **Auth.js v5** with Google + email allowlist
-- **Vercel Cron** + signed webhook routes for fan-in
+- **Signed webhook routes** for fan-in
 - `@notionhq/client` · `@doist/todoist-api-typescript` (v1) · `googleapis`
 
 ## What's done (M0–M2 + M5 layout)
@@ -71,15 +71,13 @@ vercel env add DATABASE_URL production
 vercel --prod
 ```
 
-The cron in `vercel.json` runs `/api/cron/full-sync` every 30 minutes as a drift safety net.
-
 ## Webhooks (do these once Vercel is live, optional for local dev)
 
 - **Notion:** [my-integrations → your integration → Webhooks](https://www.notion.so/my-integrations) → add subscription pointing at `https://<your-domain>/api/webhooks/notion`. Notion will POST a `verification_token` on first ping; the route echoes it. Copy the secret it shows into `NOTION_WEBHOOK_SECRET`.
 - **Todoist:** [Todoist App Console](https://developer.todoist.com/appconsole.html) → your app → Webhooks → URL `https://<your-domain>/api/webhooks/todoist`, events `item:*` and `project:*`. Copy the secret into `TODOIST_WEBHOOK_SECRET`.
 - **Google Calendar:** uses watch-channels; channel-renewal cron lands in M3.
 
-Without webhooks the cron job (every 30 min) keeps the cache fresh enough for daily use.
+Without webhooks, use **Run sync now** on the dashboard (or a signed-in `POST` to `/api/sync/run`) periodically to refresh the cache.
 
 ## Repo layout
 
@@ -93,7 +91,6 @@ src/
     api/
       auth/[...nextauth]/    — Auth.js handlers
       sync/run/              — manual full-sync trigger
-      cron/full-sync/        — Vercel Cron target
       webhooks/{notion,todoist}/ — HMAC-verified webhook receivers (M3 will deepen)
   lib/
     auth.ts                  — Auth.js config + allowlist

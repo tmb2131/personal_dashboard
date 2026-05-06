@@ -6,6 +6,7 @@ import { Next3Days } from "./_panels/next-3-days";
 import { Projects } from "./_panels/projects";
 import { UpcomingTrips } from "./_panels/upcoming-trips";
 import { LifeAreas } from "./_panels/life-areas";
+import { TodayRecurringTasksProvider } from "./_panels/today-recurring-tasks-context";
 import { loadDashboardSafe } from "@/lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
@@ -45,51 +46,55 @@ npm run dev`}
 
   if (data.isEmpty) {
     return (
-      <main className="flex min-h-dvh flex-col">
-        <HeroHeader meta={data.meta} initialNow={data.now} />
-        <div className="flex flex-1 items-center justify-center p-8">
-          <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 text-center">
-            <h2 className="text-base font-medium">No data yet</h2>
-            <p className="text-sm text-fg-muted">
-              Run an initial sync to pull your Notion, Todoist and Google Calendar data.
-            </p>
-            <form action="/api/sync/run" method="post">
-              <button className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-bg px-4 text-sm hover:bg-bg-elevated">
-                Run sync now
-              </button>
-            </form>
+      <TodayRecurringTasksProvider>
+        <main className="flex min-h-dvh flex-col">
+          <HeroHeader meta={data.meta} initialNow={data.now} />
+          <div className="flex flex-1 items-center justify-center p-8">
+            <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 text-center">
+              <h2 className="text-base font-medium">No data yet</h2>
+              <p className="text-sm text-fg-muted">
+                Run an initial sync to pull your Notion, Todoist and Google Calendar data.
+              </p>
+              <form action="/api/sync/run" method="post">
+                <button className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-bg px-4 text-sm hover:bg-bg-elevated">
+                  Run sync now
+                </button>
+              </form>
             <p className="text-[11px] text-fg-subtle">
               (Or trigger from the terminal:{" "}
               <code className="font-mono">curl -X POST localhost:3000/api/sync/run</code>)
             </p>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </TodayRecurringTasksProvider>
     );
   }
 
   return (
-    <main className="flex min-h-dvh flex-col">
-      <HeroHeader meta={data.meta} initialNow={data.now} />
+    <TodayRecurringTasksProvider>
+      <main className="flex min-h-dvh flex-col">
+        <HeroHeader meta={data.meta} initialNow={data.now} />
 
-      <div className="grid flex-1 min-h-0 grid-cols-1 gap-x-6 px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">
-        <div className="min-w-0">
-          <TaskList tasks={data.todayTasks} doneCount={data.todayDoneCount} />
-          <TodayCalendar events={data.todayEvents} now={data.now} />
+        <div className="grid flex-1 min-h-0 grid-cols-1 gap-x-6 px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">
+          <div className="min-w-0">
+            <TaskList tasks={data.todayTasks} />
+            <TodayCalendar events={data.todayEvents} now={data.now} />
+          </div>
+
+          <div className="min-w-0">
+            <Next3Days groups={data.next3Days} />
+            <Projects groups={data.projects} />
+          </div>
+
+          <div className="min-w-0">
+            <UpcomingTrips trips={data.upcomingTrips} now={data.now} />
+            <LifeAreas areas={data.lifeAreas} />
+          </div>
         </div>
 
-        <div className="min-w-0">
-          <Next3Days groups={data.next3Days} />
-          <Projects groups={data.projects} />
-        </div>
-
-        <div className="min-w-0">
-          <UpcomingTrips trips={data.upcomingTrips} now={data.now} />
-          <LifeAreas areas={data.lifeAreas} />
-        </div>
-      </div>
-
-      <FooterStrip initialNow={data.now} lastSyncAt={data.lastSyncAt} />
-    </main>
+        <FooterStrip initialNow={data.now} lastSyncAt={data.lastSyncAt} />
+      </main>
+    </TodayRecurringTasksProvider>
   );
 }

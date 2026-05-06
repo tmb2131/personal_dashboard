@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatTimeWithSuffix } from "@/lib/utils";
 import type { DashboardMeta } from "@/lib/dashboard-data";
+import { useTodayRecurringTasksVisibility } from "./today-recurring-tasks-context";
 
 function pluralise(n: number, one: string, many: string) {
   return n === 1 ? `${n} ${one}` : `${n} ${many}`;
@@ -10,10 +11,15 @@ function pluralise(n: number, one: string, many: string) {
 
 export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialNow: Date }) {
   const [now, setNow] = useState<Date>(new Date(initialNow));
+  const { showRecurringTodayTasks } = useTodayRecurringTasksVisibility();
+
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(i);
   }, []);
+
+  const todayOpenDisplayed =
+    meta.todayOpenCount + (showRecurringTodayTasks ? meta.todayOpenRecurringCount : 0);
 
   const weekday = now.toLocaleDateString("en-GB", { weekday: "long" });
   const dayMonth = now.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
@@ -31,7 +37,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
       </div>
 
       <div className="ml-2 flex items-baseline gap-3 text-[13px] text-fg-muted">
-        <span>{pluralise(meta.todayOpenCount, "open", "open")}</span>
+        <span>{pluralise(todayOpenDisplayed, "open", "open")}</span>
         <span className="text-fg-subtle">·</span>
         <span>{pluralise(meta.todayMeetingCount, "meeting", "meetings")}</span>
         {meta.nextEvent && (

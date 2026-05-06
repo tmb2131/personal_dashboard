@@ -1,30 +1,67 @@
+"use client";
+
+import { useMemo } from "react";
 import type { Subtask } from "@/lib/dashboard-data";
 import { SectionHeader } from "./section-header";
 import { TaskRow } from "./task-row";
 import { AddTaskRow } from "./add-task-row";
+import { useTodayRecurringTasksVisibility } from "./today-recurring-tasks-context";
 
-export function TaskList({
-  tasks,
-  doneCount,
-  source = "todoist",
-}: {
-  tasks: Subtask[];
-  doneCount: number;
-  source?: string;
-}) {
-  const total = tasks.length;
-  const ratio = total > 0 ? `${doneCount}/${total}` : "0";
+export function TaskList({ tasks, source = "todoist" }: { tasks: Subtask[]; source?: string }) {
+  const { showRecurringTodayTasks, setShowRecurringTodayTasks } = useTodayRecurringTasksVisibility();
+
+  const visibleTasks = useMemo(
+    () => (showRecurringTodayTasks ? tasks : tasks.filter((t) => !t.hasRecurringTag)),
+    [tasks, showRecurringTodayTasks],
+  );
+
+  const doneVisible = visibleTasks.filter((t) => t.done).length;
+  const total = visibleTasks.length;
+  const ratio = total > 0 ? `${doneVisible}/${total}` : "0";
   const isEmpty = total === 0;
 
   return (
     <section className="border-t border-border">
-      <SectionHeader eyebrow="Today" title="Tasks" count={ratio} source={source} />
+      <SectionHeader eyebrow="Today" title="Tasks" count={ratio} source={source}>
+        <div className="flex cursor-default select-none items-center gap-2 text-[11px] text-fg-muted">
+          <span className="max-w-[9rem] leading-snug normal-case tracking-normal">
+            {showRecurringTodayTasks ? "All tasks" : "Excluding recurring-label"}
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showRecurringTodayTasks}
+            aria-label={
+              showRecurringTodayTasks
+                ? "Today list shows every task including recurring-label. Switch to exclude recurring-label tasks."
+                : "Today list hides recurring-label tasks. Switch to show all tasks."
+            }
+            title={
+              showRecurringTodayTasks
+                ? "Showing all tasks (toggle to hide recurring-label tasks)"
+                : "Hiding recurring-label tasks (toggle to show every task)"
+            }
+            onClick={() => setShowRecurringTodayTasks(!showRecurringTodayTasks)}
+            className="relative inline-flex h-5 w-[34px] shrink-0 rounded-full border border-border bg-bg transition-colors data-[state=on]:border-fg-muted/40 data-[state=on]:bg-bg-elevated"
+            data-state={showRecurringTodayTasks ? "on" : "off"}
+          >
+            <span
+              className="pointer-events-none absolute top-px left-px h-[18px] w-[18px] rounded-full bg-fg-muted/60 shadow transition-transform data-[state=on]:translate-x-[14px] data-[state=on]:bg-fg-muted"
+              data-state={showRecurringTodayTasks ? "on" : "off"}
+            />
+          </button>
+        </div>
+      </SectionHeader>
 
       {isEmpty ? (
-        <div className="px-5 pb-2 text-[12px] text-fg-subtle">Nothing due. Quiet day.</div>
+        <div className="px-5 pb-2 text-[12px] text-fg-subtle">
+          {tasks.length === 0
+            ? "Nothing due. Quiet day."
+            : "Every task today matches the recurring label. Turn on the switch to show the full list."}
+        </div>
       ) : (
         <ul>
-          {tasks.map((t) => (
+          {visibleTasks.map((t) => (
             <TaskRow key={t.key} t={t} />
           ))}
         </ul>

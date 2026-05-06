@@ -18,20 +18,22 @@ export function SectionHeader({
   return (
     <div
       className={cn(
-        "flex items-baseline gap-2 px-5 pt-5 pb-3 text-[11px] tracking-[0.14em] text-fg-subtle",
+        "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 pt-5 pb-3 text-[11px] tracking-[0.14em] text-fg-subtle",
         className,
       )}
     >
-      <span className="uppercase">{eyebrow}</span>
-      <span>·</span>
-      <span className="uppercase text-fg">{title}</span>
-      {count !== undefined && count !== "" && (
-        <span className="ml-1.5 tabular-nums text-fg-muted normal-case tracking-normal">{count}</span>
-      )}
-      {children}
-      {source && (
-        <span className="ml-auto normal-case tracking-normal text-fg-subtle">{source}</span>
-      )}
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="uppercase">{eyebrow}</span>
+        <span>·</span>
+        <span className="uppercase text-fg">{title}</span>
+        {count !== undefined && count !== "" && (
+          <span className="ml-1.5 tabular-nums text-fg-muted normal-case tracking-normal">{count}</span>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-3 normal-case tracking-normal">
+        {children}
+        {source && <span className="text-fg-subtle">{source}</span>}
+      </div>
     </div>
   );
 }

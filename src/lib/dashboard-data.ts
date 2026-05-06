@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
+import { hasRecurringTagForTodayPanel } from "@/lib/sync/mappings";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
@@ -27,6 +28,8 @@ export type Subtask = {
   projectTitle: string | null;
   categoryTitle: string | null;
   estimateMinutes: number | null;
+  /** Todoist label / title `#recurring`; hidden from Today by default, reveal via toggle */
+  hasRecurringTag: boolean;
 };
 
 export type Project = {
@@ -62,7 +65,10 @@ export type DayGroupedEvents = {
 };
 
 export type DashboardMeta = {
+  /** Open tasks due today excluding recurring-tag (default overview) */
   todayOpenCount: number;
+  /** Open recurring-tag tasks due today (add to hero count when toggle is on) */
+  todayOpenRecurringCount: number;
   todayMeetingCount: number;
   nextEvent: { summary: string; start: Date } | null;
 };
@@ -72,7 +78,6 @@ export type DashboardData = {
   events: CalendarEvent[];
   todayEvents: CalendarEvent[];
   todayTasks: Subtask[];
-  todayDoneCount: number;
   next3Days: DayGroupedEvents[];
   projects: ProjectGroups;
   upcomingTrips: Project[];
@@ -130,6 +135,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const todoistProjectById = new Map(todoistProjects.map((p) => [p.id, p]));
+  const todoistTaskById = new Map(tasks.map((t) => [t.id, t]));
   const linkByNotion = new Map(links.map((l) => [l.notionPageId, l]));
   const linkByTodoist = new Map(links.map((l) => [l.todoistTaskId, l]));
   const pageById = new Map(pages.map((p) => [p.id, p]));
@@ -165,6 +171,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       projectTitle: parentProject?.title ?? null,
       categoryTitle: cat?.title ?? null,
       estimateMinutes: null,
+      hasRecurringTag: hasRecurringTagForTodayPanel(matched?.labels ?? [], p.title),
     };
   }
 
@@ -242,6 +249,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       projectTitle: null,
       categoryTitle: project?.name ?? null,
       estimateMinutes: null,
+      hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
     });
   }
   todayTasks.sort((a, b) => {
@@ -250,8 +258,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     const tb = (b.date ?? b.deadline ?? new Date(0)).getTime();
     return ta - tb;
   });
-  const todayDoneCount = todayTasks.filter((t) => t.done).length;
-
   // ----- Next 3 days events grouped
   const buckets = makeDayBuckets(now, 3);
   const next3Days: DayGroupedEvents[] = buckets.map((b) => ({
@@ -308,8 +314,11 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   // ----- Meta for hero header
   const todayEvents = events.filter((e) => e.start && sameDay(new Date(e.start), now));
   const nextEvt = todayEvents.find((e) => e.start && new Date(e.start).getTime() > now.getTime());
+  const openDueToday = todayTasks.filter((t) => !t.done);
+  const todayOpenRecurringCount = openDueToday.filter((t) => t.hasRecurringTag).length;
   const meta: DashboardMeta = {
-    todayOpenCount: todayTasks.filter((t) => !t.done).length,
+    todayOpenCount: openDueToday.length - todayOpenRecurringCount,
+    todayOpenRecurringCount,
     todayMeetingCount: todayEvents.length,
     nextEvent: nextEvt && nextEvt.start
       ? { summary: nextEvt.summary ?? "(untitled)", start: new Date(nextEvt.start) }
@@ -323,7 +332,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     events,
     todayEvents,
     todayTasks,
-    todayDoneCount,
     next3Days,
     projects,
     upcomingTrips,

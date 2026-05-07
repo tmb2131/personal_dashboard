@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 import {
+  ensureGcalWatchesHealthy,
   getCalendarClientFromRefresh,
   syncGcalIncrementalForCalendar,
 } from "@/lib/sync/gcal";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 /** Google Calendar push notifications (channel callbacks). */
 export async function POST(req: NextRequest) {
   const channelId = req.headers.get("x-goog-channel-id");
+  const resourceId = req.headers.get("x-goog-resource-id");
   const resourceState = req.headers.get("x-goog-resource-state");
 
   if (resourceState === "not_exists") {
@@ -34,6 +36,14 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ ok: true });
   }
+  if (row.resourceId && resourceId && row.resourceId !== resourceId) {
+    await logAudit({
+      source: "webhook-gcal",
+      op: "stale_resource",
+      payload: { channelId, resourceId, expectedResourceId: row.resourceId },
+    });
+    return NextResponse.json({ ok: true });
+  }
 
   const calendarId = row.source.slice("gcal:".length);
   const cal = await getCalendarClientFromRefresh();
@@ -53,6 +63,16 @@ export async function POST(req: NextRequest) {
       op: "incremental",
       payload: { calendarId, ...r },
     });
+    try {
+      await ensureGcalWatchesHealthy();
+    } catch (e) {
+      await logAudit({
+        source: "webhook-gcal",
+        op: "watch_health_error",
+        payload: { calendarId },
+        error: (e as Error).message,
+      });
+    }
   } catch (e) {
     await logAudit({
       source: "webhook-gcal",

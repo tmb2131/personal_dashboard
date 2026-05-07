@@ -16,7 +16,7 @@ The plan and architecture decisions live in [`/Users/tombrosens/.claude/plans/i-
 
 - Project scaffold, Drizzle schema, Auth.js with Google + email allowlist.
 - Notion sync (To-Dos + Categories) → Postgres (full + incremental page upserts for webhooks).
-- Google Calendar sync (Tom + Sriya, 14-day rolling window) → Postgres; optional **incremental sync** via stored `syncToken`, **push watches** + `/api/webhooks/gcal`, and **daily channel renewal** (`/api/cron/gcal-renew` + `vercel.json` schedule when deployed on Vercel).
+- Google Calendar sync (Tom + Sriya, 14-day rolling window) → Postgres; optional **incremental sync** via stored `syncToken`, **push watches** + `/api/webhooks/gcal`, and **self-healing watch renewal** from webhook/manual sync traffic (no cron required).
 - Todoist sync (tasks + projects) → Postgres (full + targeted task upserts for webhooks).
 - Linking model: `task_links` and `category_project_links` tables, plus a heuristic title-match backfill.
 - **M3 — Orchestrator:** link-aware mirroring (`lib/sync/orchestrator.ts`), `audit_log`, recurring Todoist instance repair when links bump to a new task id.
@@ -76,7 +76,7 @@ vercel --prod
 
 - **Notion:** [my-integrations → your integration → Webhooks](https://www.notion.so/my-integrations) → add subscription pointing at `https://<your-domain>/api/webhooks/notion`. Notion will POST a `verification_token` on first ping; the route echoes it. Copy the secret it shows into `NOTION_WEBHOOK_SECRET`.
 - **Todoist:** [Todoist App Console](https://developer.todoist.com/appconsole.html) → your app → Webhooks → URL `https://<your-domain>/api/webhooks/todoist`, events `item:*` and `project:*`. Copy the secret into `TODOIST_WEBHOOK_SECRET`.
-- **Google Calendar push:** watches call `https://<your-domain>/api/webhooks/gcal`. Renewals run via **Vercel Cron** (`/api/cron/gcal-renew` daily) or manually in dev. Requires `GOOGLE_REFRESH_TOKEN` (and `APP_URL` / `VERCEL_URL` for the watch address). Optionally set `CRON_SECRET` and call the cron route with `Authorization: Bearer <secret>`.
+- **Google Calendar push:** watches call `https://<your-domain>/api/webhooks/gcal`. Channel renewal is automatic/self-healing during webhook and manual sync activity. Requires `GOOGLE_REFRESH_TOKEN` (and `APP_URL` / `VERCEL_URL` for the watch address).
 
 Without webhooks, use **Run sync now** on the dashboard (or a signed-in `POST` to `/api/sync/run`) periodically to refresh the cache.
 
@@ -95,14 +95,13 @@ src/
       auth/[...nextauth]/    — Auth.js handlers
       sync/run/              — manual full-sync trigger
       webhooks/{notion,todoist,gcal}/ — HMAC-verified (Notion/Todoist); GCal push uses Google headers
-      cron/gcal-renew/       — renew Calendar push channels (cron + manual)
   lib/
     auth.ts                  — Auth.js config + allowlist
     db/{index,schema}.ts     — Drizzle
     sync/
       notion.ts              — pulls To-Dos + Categories
       todoist.ts             — pulls tasks + projects
-      gcal.ts                — Calendar window + incremental + watch helpers
+      gcal.ts                — Calendar window + incremental + watch helpers + watch health
       orchestrator.ts        — link mirroring, recurring repair, dashboard toggle
       audit.ts               — append-only audit_log writer
       mappings.ts            — Notion ↔ Todoist field translation (single source of truth)

@@ -5,6 +5,9 @@ import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 
 export type AccessTokenSource = () => Promise<string | undefined>;
+const WATCH_RENEW_MARGIN_MS = 48 * 60 * 60 * 1000;
+const WATCH_ENSURE_LEASE_MS = 30 * 1000;
+let watchEnsureLeaseUntil = 0;
 
 function calendarIds(): string[] {
   return (process.env.GCAL_CALENDAR_IDS ?? "")
@@ -38,6 +41,21 @@ export async function getCalendarClientFromRefresh(): Promise<calendar_v3.Calend
   const auth = getOAuth2WithRefreshToken();
   if (!auth) return null;
   return google.calendar({ version: "v3", auth });
+}
+
+function isRefreshCredentialError(err: unknown) {
+  const e = err as {
+    code?: number;
+    message?: string;
+    response?: { data?: { error?: string; error_description?: string } };
+  };
+  const apiErr = e.response?.data?.error;
+  return (
+    e.code === 401 ||
+    apiErr === "invalid_grant" ||
+    apiErr === "invalid_client" ||
+    e.message?.toLowerCase().includes("invalid_grant") === true
+  );
 }
 
 function windowRange(now: Date) {
@@ -261,6 +279,15 @@ export async function syncGcalIncrementalForCalendar(
 
     return { mode: "incremental" as const, upserted };
   } catch (e) {
+    if (isRefreshCredentialError(e)) {
+      await logAudit({
+        source: "gcal",
+        op: "incremental_auth_error",
+        payload: { calendarId },
+        error: (e as Error).message,
+      });
+      throw e;
+    }
     if (!isSyncTokenGone(e)) throw e;
     await db
       .update(schema.syncState)
@@ -344,37 +371,59 @@ export async function stopGcalWatch(cal: calendar_v3.Calendar, channelId: string
 }
 
 export async function renewGcalWatchesIfNeeded() {
-  const cal = await getCalendarClientFromRefresh();
-  if (!cal) {
-    await logAudit({ source: "gcal", op: "renew_skip", error: "no oauth refresh" });
-    return { renewed: 0, skipped: calendarIds().length };
+  return ensureGcalWatchesHealthy();
+}
+
+export async function ensureGcalWatchesHealthy() {
+  const nowMs = Date.now();
+  if (watchEnsureLeaseUntil > nowMs) {
+    return { renewed: 0, skipped: calendarIds().length, skippedByLease: true };
   }
-
-  const soon = Date.now() + 48 * 60 * 60 * 1000;
-  let renewed = 0;
-
-  for (const calendarId of calendarIds()) {
-    const sourceKey = gcalSyncSourceKey(calendarId);
-    const [row] = await db
-      .select()
-      .from(schema.syncState)
-      .where(eq(schema.syncState.source, sourceKey));
-    const exp = row?.channelExpiresAt?.getTime() ?? 0;
-    if (exp > soon && row?.channelId && row?.resourceId) {
-      continue;
+  watchEnsureLeaseUntil = nowMs + WATCH_ENSURE_LEASE_MS;
+  try {
+    const cal = await getCalendarClientFromRefresh();
+    if (!cal) {
+      await logAudit({ source: "gcal", op: "watch_health_skip", error: "no oauth refresh" });
+      return { renewed: 0, skipped: calendarIds().length, skippedByLease: false };
     }
 
-    if (row?.channelId && row?.resourceId) {
-      try {
-        await stopGcalWatch(cal, row.channelId, row.resourceId);
-      } catch {
-        /* channel may already be gone */
+    const soon = Date.now() + WATCH_RENEW_MARGIN_MS;
+    let renewed = 0;
+
+    for (const calendarId of calendarIds()) {
+      const sourceKey = gcalSyncSourceKey(calendarId);
+      const [row] = await db
+        .select()
+        .from(schema.syncState)
+        .where(eq(schema.syncState.source, sourceKey));
+      const exp = row?.channelExpiresAt?.getTime() ?? 0;
+      if (exp > soon && row?.channelId && row?.resourceId) {
+        continue;
       }
+
+      if (row?.channelId && row?.resourceId) {
+        try {
+          await stopGcalWatch(cal, row.channelId, row.resourceId);
+        } catch {
+          /* channel may already be gone */
+        }
+      }
+
+      await registerGcalWatch(cal, calendarId);
+      renewed++;
     }
 
-    await registerGcalWatch(cal, calendarId);
-    renewed++;
+    return { renewed, skipped: calendarIds().length - renewed, skippedByLease: false };
+  } catch (e) {
+    if (isRefreshCredentialError(e)) {
+      await logAudit({
+        source: "gcal",
+        op: "watch_health_auth_error",
+        error: (e as Error).message,
+      });
+    }
+    throw e;
+  } finally {
+    watchEnsureLeaseUntil = 0;
   }
-
-  return { renewed, skipped: calendarIds().length - renewed };
 }

@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (eventName.startsWith("item:")) {
-      const id = todoistIdToString(eventData.id);
+      const id = extractTodoistTaskId(eventData);
       if (eventName === "item:deleted" && id) {
         await deleteTodoistTaskCacheRow(id);
         await logAudit({ source: "webhook-todoist", op: "item_deleted", payload: { id } });
@@ -120,5 +120,25 @@ function safeEqual(a: string, b: string) {
 function todoistIdToString(id: unknown): string | undefined {
   if (typeof id === "string" && id.trim()) return id;
   if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return undefined;
+}
+
+function extractTodoistTaskId(eventData: Record<string, unknown>): string | undefined {
+  const direct =
+    todoistIdToString(eventData.id) ??
+    todoistIdToString(eventData.item_id) ??
+    todoistIdToString(eventData.task_id);
+  if (direct) return direct;
+
+  const nestedItem = eventData.item;
+  if (nestedItem && typeof nestedItem === "object") {
+    const nested = nestedItem as Record<string, unknown>;
+    const nestedId =
+      todoistIdToString(nested.id) ??
+      todoistIdToString(nested.item_id) ??
+      todoistIdToString(nested.task_id);
+    if (nestedId) return nestedId;
+  }
+
   return undefined;
 }

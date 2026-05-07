@@ -74,10 +74,34 @@ async function fetchAllProjects(): Promise<TodoistProject[]> {
 }
 
 async function fetchAllTasks(): Promise<TodoistTask[]> {
-  const result = (await (api() as unknown as {
-    getTasks: () => Promise<TodoistTask[] | { results: TodoistTask[] }>;
-  }).getTasks()) as TodoistTask[] | { results: TodoistTask[] };
-  return Array.isArray(result) ? result : result.results;
+  const out: TodoistTask[] = [];
+  let cursor: string | undefined;
+  let guard = 0;
+
+  while (true) {
+    const result = (await (api() as unknown as {
+      getTasks: (
+        args?: { cursor?: string },
+      ) => Promise<TodoistTask[] | { results: TodoistTask[]; nextCursor?: string | null }>;
+    }).getTasks(cursor ? { cursor } : undefined)) as
+      | TodoistTask[]
+      | { results: TodoistTask[]; nextCursor?: string | null };
+
+    if (Array.isArray(result)) {
+      out.push(...result);
+      break;
+    }
+
+    out.push(...result.results);
+    const nextCursor = typeof result.nextCursor === "string" ? result.nextCursor.trim() : "";
+    if (!nextCursor || nextCursor === cursor) break;
+
+    cursor = nextCursor;
+    guard++;
+    if (guard > 200) break;
+  }
+
+  return out;
 }
 
 function dueToDate(t: TodoistTask): Date | null {

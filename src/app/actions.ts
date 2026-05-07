@@ -12,6 +12,7 @@ import { updateNotionFocus } from "@/lib/sync/notion";
 import { syncTodoist } from "@/lib/sync/todoist";
 
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
+const DEFAULT_QUICK_ADD_PROJECT = "Personal";
 
 // Parses "@my-project" out of the input, returns `{ text, projectName }`.
 function extractProject(s: string): { text: string; projectName: string | null } {
@@ -40,15 +41,13 @@ export async function quickAddAction(raw: string): Promise<QuickAddResult> {
 
   const api = new TodoistApi(process.env.TODOIST_TOKEN);
 
-  let projectId: string | undefined;
-  if (projectName) {
-    const projects = (await (api as unknown as {
-      getProjects: () => Promise<{ id: string; name: string }[] | { results: { id: string; name: string }[] }>;
-    }).getProjects()) as { id: string; name: string }[] | { results: { id: string; name: string }[] };
-    const list = Array.isArray(projects) ? projects : projects.results;
-    const match = list.find((p) => p.name.toLowerCase() === projectName.toLowerCase());
-    projectId = match?.id;
-  }
+  const targetProjectName = projectName ?? DEFAULT_QUICK_ADD_PROJECT;
+  const projects = (await (api as unknown as {
+    getProjects: () => Promise<{ id: string; name: string }[] | { results: { id: string; name: string }[] }>;
+  }).getProjects()) as { id: string; name: string }[] | { results: { id: string; name: string }[] };
+  const list = Array.isArray(projects) ? projects : projects.results;
+  const match = list.find((p) => p.name.toLowerCase() === targetProjectName.toLowerCase());
+  const projectId = match?.id;
 
   try {
     const baseArgs = { content, ...(projectId ? { projectId } : {}) };
@@ -69,6 +68,44 @@ export async function quickAddAction(raw: string): Promise<QuickAddResult> {
 }
 
 export type CrossPostResult = { ok: true } | { ok: false; error: string };
+
+async function updateTodoistTaskDueViaRest(args: {
+  token: string;
+  taskId: string;
+  payload: { due_datetime?: string; due_string?: string };
+}) {
+  let lastError = "Todoist update failed";
+  const endpoints = [
+    `https://api.todoist.com/api/v1/tasks/${args.taskId}`,
+    `https://api.todoist.com/rest/v2/tasks/${args.taskId}`,
+  ];
+
+  for (const endpoint of endpoints) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${args.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(args.payload),
+        cache: "no-store",
+      });
+
+      if (res.ok) return;
+      const body = await res.text().catch(() => "");
+      lastError = body || `HTTP ${res.status}: ${res.statusText}`;
+
+      // Todoist occasionally returns transient 5xx responses; retry once.
+      if (res.status >= 500 && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 300));
+        continue;
+      }
+      break;
+    }
+  }
+  throw new Error(lastError);
+}
 
 export async function pushNotionTaskToTodoistAction(notionPageId: string): Promise<CrossPostResult> {
   const session = await auth();
@@ -156,6 +193,39 @@ export async function setProjectFocusAction(args: {
       payload: args,
       error: (e as Error).message,
     });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function setTodoistTaskDueAction(args: {
+  todoistTaskId: string;
+  dueDatetime: string | null;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.todoistTaskId) return { ok: false, error: "Missing Todoist task" };
+  if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
+
+  try {
+    if (args.dueDatetime == null) {
+      await updateTodoistTaskDueViaRest({
+        token: process.env.TODOIST_TOKEN,
+        taskId: args.todoistTaskId,
+        payload: { due_string: "no date" },
+      });
+    } else {
+      const parsed = new Date(args.dueDatetime);
+      if (Number.isNaN(parsed.getTime())) return { ok: false, error: "Invalid date/time" };
+      await updateTodoistTaskDueViaRest({
+        token: process.env.TODOIST_TOKEN,
+        taskId: args.todoistTaskId,
+        payload: { due_datetime: parsed.toISOString() },
+      });
+    }
+
+    await syncTodoist().catch(() => {});
+    return { ok: true };
+  } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
 }

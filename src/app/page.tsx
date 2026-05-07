@@ -1,4 +1,5 @@
 import { TaskList } from "./_panels/task-list";
+import { PersonalTaskList } from "./_panels/personal-task-list";
 import { FooterStrip } from "./_panels/footer-strip";
 import { HeroHeader } from "./_panels/hero-header";
 import { Next3Days } from "./_panels/next-3-days";
@@ -78,6 +79,7 @@ npm run dev`}
         <div className="grid flex-1 min-h-0 grid-cols-1 gap-x-6 px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">
           <div className="min-w-0">
             <TaskList tasks={data.todayTasks} notionProjectPicklist={data.notionProjectPicklist} />
+            <PersonalTaskList tasks={data.personalTasks} />
           </div>
 
           <div className="min-w-0">

@@ -39,6 +39,7 @@ export type Subtask = {
   status: NotionPage["status"] | null;
   done: boolean;
   date: Date | null;
+  dateHasTime: boolean;
   deadline: Date | null;
   priority: NotionPage["priority"] | null;
   source: "notion" | "todoist" | "both";
@@ -100,6 +101,7 @@ export type DashboardData = {
   events: CalendarEvent[];
   todayEvents: CalendarEvent[];
   todayTasks: Subtask[];
+  personalTasks: Subtask[];
   /** Top-level Notion "Task name" rows for choosing a parent when posting Todoist → Notion. */
   notionProjectPicklist: { id: string; title: string }[];
   next3Days: DayGroupedEvents[];
@@ -139,6 +141,11 @@ function normalizedTitle(title: string | null | undefined): string | null {
   const v = (title ?? "").trim();
   if (!v || v === "0" || v === "(untitled)") return null;
   return v;
+}
+
+function todoistDueHasTime(t: TodoistTask): boolean {
+  const raw = t.raw as { due?: { datetime?: string | null } } | null;
+  return Boolean(raw?.due?.datetime);
 }
 
 /**
@@ -232,6 +239,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       status: p.status,
       done: p.status === "Done" || Boolean(matched?.checked),
       date: p.dateStart ?? matched?.dueDate ?? null,
+      dateHasTime: Boolean(p.dateIsDatetime || (matched && todoistDueHasTime(matched))),
       deadline: p.deadline ?? matched?.deadline ?? null,
       priority: p.priority ?? null,
       source: matched ? "both" : "notion",
@@ -295,6 +303,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   // ----- Today's tasks: sub-tasks (any project) due today, plus orphan Todoist
   const todayTasks: Subtask[] = [];
+  const personalProject = todoistProjects.find((p) => p.name.toLowerCase() === "personal");
+  const personalProjectId = personalProject?.id ?? null;
+  const personalTasks: Subtask[] = [];
   for (const proj of allProjects) {
     for (const s of proj.subtasks) {
       const ref = s.date ?? s.deadline;
@@ -306,6 +317,39 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   }
   // Orphan Todoist tasks (no Notion link)
   for (const t of tasks) {
+    if (!t.checked && personalProjectId && t.projectId === personalProjectId) {
+      const personalRef = t.dueDate ?? t.deadline;
+      const isDueToday = Boolean(
+        personalRef &&
+        personalRef >= todayStart &&
+        personalRef <= endOfDay(now),
+      );
+      const link = linkByTodoist.get(t.id);
+      const linkedPage = link?.notionPageId ? pageById.get(link.notionPageId) : undefined;
+      const linkedProject = linkedPage?.parentId ? pageById.get(linkedPage.parentId) : linkedPage;
+      if (!isDueToday) {
+        personalTasks.push({
+          key: `p:${t.id}`,
+          title: t.content,
+          status: "Not started",
+          done: false,
+          date: t.dueDate,
+          dateHasTime: todoistDueHasTime(t),
+          deadline: t.deadline,
+          priority: t.priority === 4 ? "High" : t.priority === 3 ? "Medium" : t.priority === 2 ? "Low" : null,
+          source: "todoist",
+          notionPageId: link?.notionPageId ?? null,
+          todoistTaskId: t.id,
+          inProgress: t.labels.includes("in-progress"),
+          projectId: null,
+          projectTitle: linkedProject?.title ?? null,
+          categoryTitle: personalProject.name,
+          estimateMinutes: null,
+          hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
+        });
+      }
+    }
+
     if (linkByTodoist.has(t.id)) continue;
     const ref = t.dueDate ?? t.deadline;
     if (!ref) continue;
@@ -317,6 +361,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       status: t.checked ? "Done" : "Not started",
       done: t.checked,
       date: t.dueDate,
+      dateHasTime: todoistDueHasTime(t),
       deadline: t.deadline,
       priority: t.priority === 4 ? "High" : t.priority === 3 ? "Medium" : t.priority === 2 ? "Low" : null,
       source: "todoist",
@@ -329,12 +374,19 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       estimateMinutes: null,
       hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
     });
+
   }
   todayTasks.sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     const ta = (a.date ?? a.deadline ?? new Date(0)).getTime();
     const tb = (b.date ?? b.deadline ?? new Date(0)).getTime();
     return ta - tb;
+  });
+  personalTasks.sort((a, b) => {
+    const ta = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const tb = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    if (ta !== tb) return ta - tb;
+    return a.title.localeCompare(b.title);
   });
   // ----- Next 3 days events grouped
   const buckets = makeDayBuckets(now, 3);
@@ -494,6 +546,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     events,
     todayEvents,
     todayTasks,
+    personalTasks,
     notionProjectPicklist,
     next3Days,
     projects,

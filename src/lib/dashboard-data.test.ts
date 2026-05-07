@@ -72,6 +72,14 @@ vi.mock("@/lib/utils", () => ({
     }),
 }));
 
+vi.mock("@/lib/date-utils", () => ({
+  parseDateOnlyLocal: (input: string) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+    if (!match) return null;
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  },
+}));
+
 import { loadDashboard } from "./dashboard-data";
 
 function notionPage(overrides: Record<string, unknown>) {
@@ -254,5 +262,63 @@ describe("loadDashboard", () => {
       ]),
     );
     expect(data.meta.todayOpenCount).toBe(2);
+  });
+
+  it("shows open recurring Todoist tasks due today from the raw due payload", async () => {
+    rows.todoistProjects = [
+      {
+        id: "recurring",
+        name: "Recurring",
+        parentId: null,
+        color: null,
+        archived: false,
+        raw: {},
+        updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+      {
+        id: "daily",
+        name: "Daily",
+        parentId: "recurring",
+        color: null,
+        archived: false,
+        raw: {},
+        updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-floss",
+        projectId: "daily",
+        content: "Floss",
+        dueDate: null,
+        dueString: "every day at 7pm",
+        dueIsRecurring: true,
+        checked: false,
+        raw: {
+          due: {
+            datetime: "2026-05-07T19:00:00.000Z",
+            date: "2026-05-07",
+            string: "every day at 7pm",
+            isRecurring: true,
+          },
+        },
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T20:08:00.000Z"));
+
+    expect(data.todayTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Floss",
+          done: false,
+          source: "todoist",
+          todoistTaskId: "todoist-floss",
+          hasRecurringTag: true,
+        }),
+      ]),
+    );
+    expect(data.meta.todayOpenCount).toBe(0);
+    expect(data.meta.todayOpenRecurringCount).toBe(1);
   });
 });

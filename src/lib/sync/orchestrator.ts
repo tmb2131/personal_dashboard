@@ -267,6 +267,29 @@ export async function repairRecurringTodoistLink(oldTodoistTaskId: string) {
     return { repaired: false as const };
   }
 
+  const row = mapTodoistTaskToRow(
+    match as unknown as Parameters<typeof mapTodoistTaskToRow>[0],
+    new Date(),
+  );
+  await db.insert(schema.todoistTasks).values(row).onConflictDoUpdate({
+    target: schema.todoistTasks.id,
+    set: {
+      projectId: sql`excluded.project_id`,
+      parentId: sql`excluded.parent_id`,
+      content: sql`excluded.content`,
+      description: sql`excluded.description`,
+      dueDate: sql`excluded.due_date`,
+      dueString: sql`excluded.due_string`,
+      dueIsRecurring: sql`excluded.due_is_recurring`,
+      deadline: sql`excluded.deadline`,
+      priority: sql`excluded.priority`,
+      checked: sql`excluded.checked`,
+      labels: sql`excluded.labels`,
+      raw: sql`excluded.raw`,
+      updatedAt: sql`excluded.updated_at`,
+    },
+  });
+
   await db
     .update(schema.taskLinks)
     .set({ todoistTaskId: match.id, lastSyncAt: new Date() })

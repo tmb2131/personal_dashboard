@@ -140,6 +140,20 @@ function sameDay(a: Date, b: Date) {
   );
 }
 
+function dateInRange(date: Date | null, start: Date, end: Date) {
+  return Boolean(date && date >= start && date <= end);
+}
+
+function taskHasDateInRange(date: Date | null, deadline: Date | null, start: Date, end: Date) {
+  return dateInRange(date, start, end) || dateInRange(deadline, start, end);
+}
+
+function taskRangeSortMs(date: Date | null, deadline: Date | null, start: Date, end: Date) {
+  const inRange = [date, deadline].filter((d): d is Date => dateInRange(d, start, end));
+  if (inRange.length > 0) return Math.min(...inRange.map((d) => d.getTime()));
+  return (date ?? deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+}
+
 function normalizedTitle(title: string | null | undefined): string | null {
   const v = (title ?? "").trim();
   if (!v || v === "0" || v === "(untitled)") return null;
@@ -214,6 +228,7 @@ function sortProjectsByNextStepDue(a: Project, b: Project): number {
 
 export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const todayStart = startOfDay(now);
+  const todayEnd = endOfDay(now);
   const tomorrowStart = startOfDay(addDays(now, 1));
   const next7DaysEnd = endOfDay(addDays(now, 7));
   const horizon = endOfDay(addDays(now, 2));
@@ -368,11 +383,13 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const next7DaysTasks: Subtask[] = [];
   for (const proj of allProjects) {
     for (const s of proj.subtasks) {
-      const ref = s.date ?? s.deadline;
-      if (!ref) continue;
-      if (ref >= todayStart && ref <= endOfDay(now)) {
+      if (taskHasDateInRange(s.date, s.deadline, todayStart, todayEnd)) {
         todayTasks.push(s);
-      } else if (!s.done && !s.hasRecurringTag && ref >= tomorrowStart && ref <= next7DaysEnd) {
+      } else if (
+        !s.done &&
+        !s.hasRecurringTag &&
+        taskHasDateInRange(s.date, s.deadline, tomorrowStart, next7DaysEnd)
+      ) {
         next7DaysTasks.push(s);
       }
     }
@@ -389,14 +406,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     const linkedPage = link?.notionPageId ? pageById.get(link.notionPageId) : undefined;
     const linkedProject = linkedPage?.parentId ? pageById.get(linkedPage.parentId) : linkedPage;
     const todoistProject = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
-    const todoistRef = t.dueDate ?? t.deadline;
+    const isDueToday = taskHasDateInRange(t.dueDate, t.deadline, todayStart, todayEnd);
 
     if (!t.checked && t.projectId && personalProjectIds.has(t.projectId)) {
-      const isDueToday = Boolean(
-        todoistRef &&
-        todoistRef >= todayStart &&
-        todoistRef <= endOfDay(now),
-      );
       if (!isDueToday) {
         personalTasks.push({
           key: `p:${t.id}`,
@@ -421,14 +433,14 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       }
     }
 
-    if (!todoistRef) continue;
+    if (!t.dueDate && !t.deadline) continue;
 
     if (link && (t.checked || openTodoistIdsAlreadyShownToday.has(t.id))) continue;
 
     if (
       !link &&
-      todoistRef >= tomorrowStart &&
-      todoistRef <= next7DaysEnd &&
+      !isDueToday &&
+      taskHasDateInRange(t.dueDate, t.deadline, tomorrowStart, next7DaysEnd) &&
       !t.checked &&
       !isRecurringProjectTask(t.projectId)
     ) {
@@ -453,7 +465,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         hasRecurringTag: isRecurringProjectTask(t.projectId),
       });
     }
-    if (todoistRef < todayStart || todoistRef > endOfDay(now)) continue;
+    if (!isDueToday) continue;
     todayTasks.push({
       key: `t:${t.id}`,
       title: t.content,
@@ -478,8 +490,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   }
   todayTasks.sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
-    const ta = (a.date ?? a.deadline ?? new Date(0)).getTime();
-    const tb = (b.date ?? b.deadline ?? new Date(0)).getTime();
+    const ta = taskRangeSortMs(a.date, a.deadline, todayStart, todayEnd);
+    const tb = taskRangeSortMs(b.date, b.deadline, todayStart, todayEnd);
     return ta - tb;
   });
   personalTasks.sort((a, b) => {
@@ -489,8 +501,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     return a.title.localeCompare(b.title);
   });
   next7DaysTasks.sort((a, b) => {
-    const ta = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-    const tb = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const ta = taskRangeSortMs(a.date, a.deadline, tomorrowStart, next7DaysEnd);
+    const tb = taskRangeSortMs(b.date, b.deadline, tomorrowStart, next7DaysEnd);
     if (ta !== tb) return ta - tb;
     return a.title.localeCompare(b.title);
   });

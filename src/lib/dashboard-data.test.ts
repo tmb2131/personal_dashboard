@@ -204,4 +204,55 @@ describe("loadDashboard", () => {
       ]),
     );
   });
+
+  it("shows open tasks with a deadline today even when their scheduled date is later", async () => {
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-deadline-today",
+        projectId: "todoist-project",
+        content: "Todoist deadline today",
+        dueDate: new Date("2026-05-09T09:00:00.000Z"),
+        deadline: new Date("2026-05-07T17:00:00.000Z"),
+      }),
+    ];
+    rows.notionPages = [
+      notionPage({
+        id: "project",
+        title: "Project",
+      }),
+      notionPage({
+        id: "notion-deadline-today",
+        title: "Notion deadline today",
+        dateStart: new Date("2026-05-09T09:00:00.000Z"),
+        deadline: new Date("2026-05-07T12:00:00.000Z"),
+        parentId: "project",
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(data.todayTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Notion deadline today",
+          done: false,
+          source: "notion",
+          notionPageId: "notion-deadline-today",
+        }),
+        expect.objectContaining({
+          title: "Todoist deadline today",
+          done: false,
+          source: "todoist",
+          todoistTaskId: "todoist-deadline-today",
+        }),
+      ]),
+    );
+    expect(data.next7DaysTasks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "Notion deadline today" }),
+        expect.objectContaining({ title: "Todoist deadline today" }),
+      ]),
+    );
+    expect(data.meta.todayOpenCount).toBe(2);
+  });
 });

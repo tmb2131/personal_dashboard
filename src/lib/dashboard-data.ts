@@ -155,6 +155,21 @@ function normalizeProjectName(name: string): string {
   return name.trim().toLowerCase();
 }
 
+function isTodoistInboxProject(project: TodoistProject): boolean {
+  const raw = project.raw as {
+    inbox_project?: boolean;
+    is_inbox_project?: boolean;
+    isInboxProject?: boolean;
+  } | null;
+
+  return (
+    normalizeProjectName(project.name) === "inbox" ||
+    raw?.inbox_project === true ||
+    raw?.is_inbox_project === true ||
+    raw?.isInboxProject === true
+  );
+}
+
 /**
  * Due timestamp for the open sub-item treated as "next step" in the Projects panel
  * (in-progress first, then soonest date/deadline). Projects with no dated next step sort last.
@@ -340,8 +355,11 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   // ----- Today's tasks: sub-tasks (any project) due today, plus orphan Todoist
   const todayTasks: Subtask[] = [];
-  const personalProject = todoistProjects.find((p) => p.name.toLowerCase() === "personal");
-  const personalProjectId = personalProject?.id ?? null;
+  const personalProjectIds = new Set(
+    todoistProjects
+      .filter((p) => normalizeProjectName(p.name) === "personal" || isTodoistInboxProject(p))
+      .map((p) => p.id),
+  );
   const personalTasks: Subtask[] = [];
   const next7DaysTasks: Subtask[] = [];
   for (const proj of allProjects) {
@@ -357,7 +375,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   }
   // Orphan Todoist tasks (no Notion link)
   for (const t of tasks) {
-    if (!t.checked && personalProjectId && t.projectId === personalProjectId) {
+    if (!t.checked && t.projectId && personalProjectIds.has(t.projectId)) {
       const personalRef = t.dueDate ?? t.deadline;
       const isDueToday = Boolean(
         personalRef &&
@@ -367,6 +385,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       const link = linkByTodoist.get(t.id);
       const linkedPage = link?.notionPageId ? pageById.get(link.notionPageId) : undefined;
       const linkedProject = linkedPage?.parentId ? pageById.get(linkedPage.parentId) : linkedPage;
+      const todoistProject = todoistProjectById.get(t.projectId);
       if (!isDueToday) {
         personalTasks.push({
           key: `p:${t.id}`,
@@ -384,7 +403,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           inProgress: t.labels.includes("in-progress"),
           projectId: null,
           projectTitle: linkedProject?.title ?? null,
-          categoryTitle: personalProject?.name ?? "Personal",
+          categoryTitle: todoistProject?.name ?? null,
           estimateMinutes: null,
           hasRecurringTag: isRecurringProjectTask(t.projectId),
         });

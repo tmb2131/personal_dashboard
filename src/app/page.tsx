@@ -1,4 +1,3 @@
-import { TodayCalendar } from "./_panels/today-calendar";
 import { TaskList } from "./_panels/task-list";
 import { FooterStrip } from "./_panels/footer-strip";
 import { HeroHeader } from "./_panels/hero-header";
@@ -74,15 +73,14 @@ npm run dev`}
     <TodayRecurringTasksProvider>
       <main className="flex min-h-dvh flex-col">
         <HeroHeader meta={data.meta} initialNow={data.now} />
+        <Next3Days groups={data.next3Days} />
 
         <div className="grid flex-1 min-h-0 grid-cols-1 gap-x-6 px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">
           <div className="min-w-0">
             <TaskList tasks={data.todayTasks} />
-            <TodayCalendar events={data.todayEvents} now={data.now} />
           </div>
 
           <div className="min-w-0">
-            <Next3Days groups={data.next3Days} />
             <Projects groups={data.projects} />
           </div>
 

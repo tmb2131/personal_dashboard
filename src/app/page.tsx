@@ -79,7 +79,7 @@ npm run dev`}
         <HeroHeader meta={data.meta} initialNow={data.now} />
         <Next3Days groups={data.next3Days} />
 
-        <div className="grid flex-1 min-h-0 grid-cols-1 gap-x-6 px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-x-6 px-4 sm:px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">
           <div className="min-w-0">
             <TaskList tasks={data.todayTasks} notionProjectPicklist={data.notionProjectPicklist} />
             <PersonalTaskList tasks={data.personalTasks} next7DaysTasks={data.next7DaysTasks} />

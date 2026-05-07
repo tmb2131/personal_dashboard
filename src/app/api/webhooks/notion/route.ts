@@ -1,11 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import crypto from "node:crypto";
+import { and, eq, sql } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 import { mirrorTodoistFromNotion } from "@/lib/sync/orchestrator";
 import { syncNotion, syncNotionEntitiesByIds } from "@/lib/sync/notion";
 import {
   MAX_WEBHOOK_BODY_BYTES,
   collectNotionPageIdsFromPayload,
+  isProductionRuntime,
+  webhookFingerprint,
 } from "@/lib/sync/webhook-utils";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +21,21 @@ export async function POST(req: NextRequest) {
   }
 
   const secret = process.env.NOTION_WEBHOOK_SECRET;
+  if (!secret && isProductionRuntime()) {
+    await logAudit({
+      source: "webhook-notion",
+      op: "missing_secret_rejected",
+    });
+    return NextResponse.json({ error: "webhook secret is required in production" }, { status: 503 });
+  }
   if (secret) {
     const sig = req.headers.get("x-notion-signature") ?? "";
     const expected = "sha256=" + crypto.createHmac("sha256", secret).update(body).digest("hex");
     if (!safeEqual(sig, expected)) {
+      await logAudit({
+        source: "webhook-notion",
+        op: "signature_invalid",
+      });
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
     }
   }
@@ -38,6 +53,33 @@ export async function POST(req: NextRequest) {
   }
 
   const pageIds = collectNotionPageIdsFromPayload(json);
+  const fingerprint = webhookFingerprint(body);
+  const [existing] = await db
+    .select({ id: schema.auditLog.id })
+    .from(schema.auditLog)
+    .where(
+      and(
+        eq(schema.auditLog.source, "webhook-notion"),
+        eq(schema.auditLog.op, "event_received"),
+        sql`payload->>'fingerprint' = ${fingerprint}`,
+        sql`${schema.auditLog.ts} > now() - interval '30 minutes'`,
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    await logAudit({
+      source: "webhook-notion",
+      op: "duplicate_ignored",
+      payload: { fingerprint, pageIds },
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  await logAudit({
+    source: "webhook-notion",
+    op: "event_received",
+    payload: { fingerprint, pageIds },
+  });
 
   try {
     if (pageIds.length && process.env.NOTION_TOKEN) {

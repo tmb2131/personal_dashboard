@@ -1,5 +1,15 @@
+import crypto from "node:crypto";
+
 /** Max webhook body size (bytes) to limit accidental large payloads. */
 export const MAX_WEBHOOK_BODY_BYTES = 600_000;
+
+export function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+export function webhookFingerprint(body: string): string {
+  return crypto.createHash("sha256").update(body).digest("hex");
+}
 
 export function collectNotionPageIdsFromPayload(body: Record<string, unknown>): string[] {
   const ids: string[] = [];

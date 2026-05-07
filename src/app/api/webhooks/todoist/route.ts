@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 import { mirrorNotionFromTodoist, repairRecurringTodoistLink } from "@/lib/sync/orchestrator";
@@ -10,7 +10,7 @@ import {
   syncTodoistTasksByIds,
 } from "@/lib/sync/todoist";
 import { reconcileTodoistCompletionResult } from "@/lib/sync/todoist-reconcile";
-import { MAX_WEBHOOK_BODY_BYTES } from "@/lib/sync/webhook-utils";
+import { MAX_WEBHOOK_BODY_BYTES, isProductionRuntime, webhookFingerprint } from "@/lib/sync/webhook-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +21,21 @@ export async function POST(req: NextRequest) {
   }
 
   const secret = process.env.TODOIST_WEBHOOK_SECRET;
+  if (!secret && isProductionRuntime()) {
+    await logAudit({
+      source: "webhook-todoist",
+      op: "missing_secret_rejected",
+    });
+    return NextResponse.json({ error: "webhook secret is required in production" }, { status: 503 });
+  }
   if (secret) {
     const sig = req.headers.get("x-todoist-hmac-sha256") ?? "";
     const expected = crypto.createHmac("sha256", secret).update(body).digest("base64");
     if (!safeEqual(sig, expected)) {
+      await logAudit({
+        source: "webhook-todoist",
+        op: "signature_invalid",
+      });
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
     }
   }
@@ -42,6 +53,32 @@ export async function POST(req: NextRequest) {
     json.event_data && typeof json.event_data === "object"
       ? (json.event_data as Record<string, unknown>)
       : {};
+  const fingerprint = webhookFingerprint(body);
+  const [existing] = await db
+    .select({ id: schema.auditLog.id })
+    .from(schema.auditLog)
+    .where(
+      and(
+        eq(schema.auditLog.source, "webhook-todoist"),
+        eq(schema.auditLog.op, "event_received"),
+        sql`payload->>'fingerprint' = ${fingerprint}`,
+        sql`${schema.auditLog.ts} > now() - interval '30 minutes'`,
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    await logAudit({
+      source: "webhook-todoist",
+      op: "duplicate_ignored",
+      payload: { fingerprint, eventName },
+    });
+    return NextResponse.json({ ok: true });
+  }
+  await logAudit({
+    source: "webhook-todoist",
+    op: "event_received",
+    payload: { fingerprint, eventName },
+  });
 
   try {
     if (eventName.startsWith("project:")) {

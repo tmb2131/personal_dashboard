@@ -329,6 +329,15 @@ async function resolveTaskLink(args: ToggleDashboardArgs) {
 export async function applyDashboardToggle(args: ToggleDashboardArgs): Promise<void> {
   const api = todoistApi();
   const linkRow = await resolveTaskLink(args);
+  const notionTarget: "Not started" | "In progress" | "Done" = args.done ? "Done" : "Not started";
+
+  const notionBeforeRows = args.notionPageId
+    ? await db
+        .select()
+        .from(schema.notionPages)
+        .where(eq(schema.notionPages.id, args.notionPageId))
+    : [];
+  const notionBefore = notionBeforeRows[0];
 
   const taskBeforeRows = args.todoistTaskId
     ? await db
@@ -338,14 +347,20 @@ export async function applyDashboardToggle(args: ToggleDashboardArgs): Promise<v
     : [];
   const taskBefore = taskBeforeRows[0];
 
+  const notionAlready = !args.notionPageId || notionBefore?.status === notionTarget;
+  const todoistAlready = !args.todoistTaskId || taskBefore?.checked === args.done;
+  if (notionAlready && todoistAlready) {
+    if (linkRow) await refreshTaskLinkHash(linkRow.id);
+    await logAudit({ source: "dashboard", op: "toggle_task_noop", payload: args });
+    return;
+  }
+
   if (linkRow) {
     await db
       .update(schema.taskLinks)
       .set({ pendingOrigin: "dashboard" })
       .where(eq(schema.taskLinks.id, linkRow.id));
   }
-
-  const notionTarget: "Not started" | "In progress" | "Done" = args.done ? "Done" : "Not started";
 
   try {
     if (args.notionPageId) {
@@ -429,7 +444,7 @@ export async function applyDashboardToggle(args: ToggleDashboardArgs): Promise<v
     }
     await logAudit({
       source: "dashboard",
-      op: "toggle_task_error",
+      op: "toggle_task_error_retryable",
       payload: args,
       error: (e as Error).message,
     });

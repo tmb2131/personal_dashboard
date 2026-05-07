@@ -2,9 +2,10 @@
 
 import * as chrono from "chrono-node";
 import { TodoistApi } from "@doist/todoist-api-typescript";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { extractProject } from "@/lib/quick-add";
 import { logAudit } from "@/lib/sync/audit";
 import { insertTaskLinkForPair } from "@/lib/sync/orchestrator";
 import { applyDashboardToggle } from "@/lib/sync/orchestrator";
@@ -21,19 +22,16 @@ import { getPersonalProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
 const DEFAULT_QUICK_ADD_PROJECT = "Personal";
 
-// Parses "@my-project" out of the input, returns `{ text, projectName }`.
-function extractProject(s: string): { text: string; projectName: string | null } {
-  const bracket = s.match(/(^|\s)@\{([^}]+)\}/);
-  if (bracket) {
-    const projectName = bracket[2].trim();
-    const text = s.replace(bracket[0], "").trim();
-    return { text, projectName: projectName || null };
-  }
-  const m = s.match(/(^|\s)@([\w-]+)/);
-  if (!m) return { text: s.trim(), projectName: null };
-  const projectName = m[2].replace(/-/g, " ").trim();
-  const text = s.replace(m[0], "").trim();
-  return { text, projectName };
+function quickAddIdempotencyKey(args: {
+  text: string;
+  notionProjectPageId: string | null;
+  notionProjectTitle: string | null;
+}): string {
+  return JSON.stringify({
+    text: args.text.trim().toLowerCase(),
+    notionProjectPageId: args.notionProjectPageId,
+    notionProjectTitle: args.notionProjectTitle?.trim().toLowerCase() ?? null,
+  });
 }
 
 export async function quickAddAction(
@@ -59,6 +57,27 @@ export async function quickAddAction(
 
   const selectedNotionProjectId = opts?.notionProjectPageId?.trim() || null;
   const selectedNotionProjectTitle = opts?.notionProjectTitle?.trim() || null;
+  const idempotencyKey = quickAddIdempotencyKey({
+    text: content,
+    notionProjectPageId: selectedNotionProjectId,
+    notionProjectTitle: selectedNotionProjectTitle,
+  });
+  const [prior] = await db
+    .select({ id: schema.auditLog.id, payload: schema.auditLog.payload })
+    .from(schema.auditLog)
+    .where(
+      and(
+        eq(schema.auditLog.source, "dashboard"),
+        eq(schema.auditLog.op, "quick_add_success"),
+        sql`payload->>'idempotencyKey' = ${idempotencyKey}`,
+        sql`${schema.auditLog.ts} > now() - interval '2 minutes'`,
+      ),
+    )
+    .limit(1);
+  if (prior) {
+    return { ok: true, summary: "Already added recently" };
+  }
+
   const targetProjectName = selectedNotionProjectId ? "Notion" : (projectName ?? DEFAULT_QUICK_ADD_PROJECT);
   const projects = (await (api as unknown as {
     getProjects: () => Promise<{ id: string; name: string }[] | { results: { id: string; name: string }[] }>;
@@ -77,24 +96,46 @@ export async function quickAddAction(
     const created = await api.addTask(args as Parameters<typeof api.addTask>[0]);
 
     if (selectedNotionProjectId) {
-      const { pageId } = await createNotionProjectSubtask({
-        notionParentPageId: selectedNotionProjectId,
-        title: content,
-        dueDate: dueDate
-          ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`
-          : null,
-      });
-      await syncTodoistTasksByIds([created.id]);
-      await insertTaskLinkForPair(pageId, created.id);
+      try {
+        const { pageId } = await createNotionProjectSubtask({
+          notionParentPageId: selectedNotionProjectId,
+          title: content,
+          dueDate: dueDate
+            ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`
+            : null,
+        });
+        await syncTodoistTasksByIds([created.id]);
+        await insertTaskLinkForPair(pageId, created.id);
+      } catch (e) {
+        await logAudit({
+          source: "dashboard",
+          op: "quick_add_partial",
+          payload: { idempotencyKey, todoistTaskId: created.id },
+          error: (e as Error).message,
+        });
+        throw e;
+      }
     } else {
       await syncTodoist().catch(() => {});
     }
+
+    await logAudit({
+      source: "dashboard",
+      op: "quick_add_success",
+      payload: { idempotencyKey, todoistTaskId: created.id },
+    });
 
     return {
       ok: true,
       summary: created.content + (dueDate ? ` · ${dueDate.toLocaleDateString()}` : ""),
     };
   } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "quick_add_error",
+      payload: { idempotencyKey },
+      error: (e as Error).message,
+    });
     return { ok: false, error: (e as Error).message };
   }
 }

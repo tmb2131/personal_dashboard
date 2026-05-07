@@ -170,6 +170,10 @@ function isTodoistInboxProject(project: TodoistProject): boolean {
   );
 }
 
+function todoistPriorityToNotion(priority: number): NotionPage["priority"] | null {
+  return priority === 4 ? "High" : priority === 3 ? "Medium" : priority === 2 ? "Low" : null;
+}
+
 /**
  * Due timestamp for the open sub-item treated as "next step" in the Projects panel
  * (in-progress first, then soonest date/deadline). Projects with no dated next step sort last.
@@ -373,19 +377,26 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       }
     }
   }
-  // Orphan Todoist tasks (no Notion link)
+  const openTodoistIdsAlreadyShownToday = new Set(
+    todayTasks
+      .filter((s) => !s.done && s.todoistTaskId)
+      .map((s) => s.todoistTaskId!),
+  );
+  // Direct Todoist rows. Linked rows are used as a fallback when their Notion
+  // mirror does not already produce an open Today item.
   for (const t of tasks) {
+    const link = linkByTodoist.get(t.id);
+    const linkedPage = link?.notionPageId ? pageById.get(link.notionPageId) : undefined;
+    const linkedProject = linkedPage?.parentId ? pageById.get(linkedPage.parentId) : linkedPage;
+    const todoistProject = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
+    const todoistRef = t.dueDate ?? t.deadline;
+
     if (!t.checked && t.projectId && personalProjectIds.has(t.projectId)) {
-      const personalRef = t.dueDate ?? t.deadline;
       const isDueToday = Boolean(
-        personalRef &&
-        personalRef >= todayStart &&
-        personalRef <= endOfDay(now),
+        todoistRef &&
+        todoistRef >= todayStart &&
+        todoistRef <= endOfDay(now),
       );
-      const link = linkByTodoist.get(t.id);
-      const linkedPage = link?.notionPageId ? pageById.get(link.notionPageId) : undefined;
-      const linkedProject = linkedPage?.parentId ? pageById.get(linkedPage.parentId) : linkedPage;
-      const todoistProject = todoistProjectById.get(t.projectId);
       if (!isDueToday) {
         personalTasks.push({
           key: `p:${t.id}`,
@@ -396,8 +407,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           date: t.dueDate,
           dateHasTime: todoistDueHasTime(t),
           deadline: t.deadline,
-          priority: t.priority === 4 ? "High" : t.priority === 3 ? "Medium" : t.priority === 2 ? "Low" : null,
-          source: "todoist",
+          priority: todoistPriorityToNotion(t.priority),
+          source: link ? "both" : "todoist",
           notionPageId: link?.notionPageId ?? null,
           todoistTaskId: t.id,
           inProgress: t.labels.includes("in-progress"),
@@ -410,11 +421,17 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       }
     }
 
-    if (linkByTodoist.has(t.id)) continue;
-    const ref = t.dueDate ?? t.deadline;
-    if (!ref) continue;
-    if (ref >= tomorrowStart && ref <= next7DaysEnd && !t.checked && !isRecurringProjectTask(t.projectId)) {
-      const project = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
+    if (!todoistRef) continue;
+
+    if (link && (t.checked || openTodoistIdsAlreadyShownToday.has(t.id))) continue;
+
+    if (
+      !link &&
+      todoistRef >= tomorrowStart &&
+      todoistRef <= next7DaysEnd &&
+      !t.checked &&
+      !isRecurringProjectTask(t.projectId)
+    ) {
       next7DaysTasks.push({
         key: `t:${t.id}`,
         title: t.content,
@@ -424,20 +441,19 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         date: t.dueDate,
         dateHasTime: todoistDueHasTime(t),
         deadline: t.deadline,
-        priority: t.priority === 4 ? "High" : t.priority === 3 ? "Medium" : t.priority === 2 ? "Low" : null,
+        priority: todoistPriorityToNotion(t.priority),
         source: "todoist",
         notionPageId: null,
         todoistTaskId: t.id,
         inProgress: t.labels.includes("in-progress"),
         projectId: null,
         projectTitle: null,
-        categoryTitle: project?.name ?? null,
+        categoryTitle: todoistProject?.name ?? null,
         estimateMinutes: null,
         hasRecurringTag: isRecurringProjectTask(t.projectId),
       });
     }
-    if (ref < todayStart || ref > endOfDay(now)) continue;
-    const project = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
+    if (todoistRef < todayStart || todoistRef > endOfDay(now)) continue;
     todayTasks.push({
       key: `t:${t.id}`,
       title: t.content,
@@ -447,14 +463,14 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       date: t.dueDate,
       dateHasTime: todoistDueHasTime(t),
       deadline: t.deadline,
-      priority: t.priority === 4 ? "High" : t.priority === 3 ? "Medium" : t.priority === 2 ? "Low" : null,
-      source: "todoist",
-      notionPageId: null,
+      priority: todoistPriorityToNotion(t.priority),
+      source: link ? "both" : "todoist",
+      notionPageId: link?.notionPageId ?? null,
       todoistTaskId: t.id,
       inProgress: t.labels.includes("in-progress"),
       projectId: null,
-      projectTitle: null,
-      categoryTitle: project?.name ?? null,
+      projectTitle: linkedProject?.title ?? null,
+      categoryTitle: todoistProject?.name ?? null,
       estimateMinutes: null,
       hasRecurringTag: isRecurringProjectTask(t.projectId),
     });

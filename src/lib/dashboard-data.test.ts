@@ -1,0 +1,207 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const rows = vi.hoisted(() => ({
+  gcalEvents: [] as unknown[],
+  notionPages: [] as unknown[],
+  notionCategories: [] as unknown[],
+  todoistTasks: [] as unknown[],
+  taskLinks: [] as unknown[],
+  todoistProjects: [] as unknown[],
+  syncState: [] as unknown[],
+}));
+
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
+  return {
+    ...actual,
+    and: vi.fn(),
+    asc: vi.fn(),
+    eq: vi.fn(),
+    gte: vi.fn(),
+    lte: vi.fn(),
+  };
+});
+
+vi.mock("@/lib/db", () => {
+  function table(name: keyof typeof rows, columns: string[] = []) {
+    return Object.fromEntries([
+      ["__name", name],
+      ...columns.map((column) => [column, `${name}.${column}`]),
+    ]);
+  }
+
+  function queryFor(tableName: keyof typeof rows) {
+    const builder = {
+      where: () => builder,
+      orderBy: () => builder,
+      then: <TResult1 = unknown[], TResult2 = never>(
+        onfulfilled?: ((value: unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
+        onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+      ) => Promise.resolve(rows[tableName]).then(onfulfilled, onrejected),
+    };
+    return builder;
+  }
+
+  return {
+    db: {
+      select: () => ({
+        from: (selectedTable: { __name: keyof typeof rows }) => queryFor(selectedTable.__name),
+      }),
+    },
+    schema: {
+      gcalEvents: table("gcalEvents", ["start"]),
+      notionPages: table("notionPages", ["archived"]),
+      notionCategories: table("notionCategories"),
+      todoistTasks: table("todoistTasks"),
+      taskLinks: table("taskLinks"),
+      todoistProjects: table("todoistProjects"),
+      syncState: table("syncState"),
+    },
+  };
+});
+
+vi.mock("@/lib/utils", () => ({
+  bucketKey: (date: Date) => date.toISOString().slice(0, 10),
+  isTravelEventsCategory: (value: string | null) => /travel/i.test(value ?? ""),
+  makeDayBuckets: (now: Date, count: number) =>
+    Array.from({ length: count }, (_, index) => {
+      const date = new Date(now);
+      date.setDate(date.getDate() + index);
+      const key = date.toISOString().slice(0, 10);
+      return { key, date, label: key, shortLabel: key };
+    }),
+}));
+
+import { loadDashboard } from "./dashboard-data";
+
+function notionPage(overrides: Record<string, unknown>) {
+  return {
+    id: "notion-page",
+    categoryId: null,
+    title: "Notion page",
+    status: "Not started",
+    dateStart: null,
+    dateEnd: null,
+    dateIsDatetime: false,
+    deadline: null,
+    priority: null,
+    focus: null,
+    tripStatus: null,
+    parentId: null,
+    keyNextStep: null,
+    nextSteps: null,
+    notes: null,
+    archived: false,
+    ignore: false,
+    raw: {},
+    updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+    lastSyncedAt: new Date("2026-05-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function todoistTask(overrides: Record<string, unknown>) {
+  return {
+    id: "todoist-task",
+    projectId: "todoist-project",
+    parentId: null,
+    content: "Todoist task",
+    description: null,
+    dueDate: null,
+    dueString: null,
+    dueIsRecurring: false,
+    deadline: null,
+    priority: 1,
+    checked: false,
+    labels: [],
+    raw: {},
+    updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+describe("loadDashboard", () => {
+  beforeEach(() => {
+    rows.gcalEvents = [];
+    rows.notionPages = [];
+    rows.notionCategories = [];
+    rows.todoistTasks = [];
+    rows.taskLinks = [];
+    rows.todoistProjects = [];
+    rows.syncState = [];
+  });
+
+  it("shows an open linked Todoist task due today when the Notion mirror is stale", async () => {
+    rows.todoistProjects = [
+      {
+        id: "recurring",
+        name: "Recurring",
+        parentId: null,
+        color: null,
+        archived: false,
+        raw: {},
+        updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+      {
+        id: "home",
+        name: "Home",
+        parentId: "recurring",
+        color: null,
+        archived: false,
+        raw: {},
+        updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-riverford",
+        projectId: "home",
+        content: "Riverford boxes outside",
+        dueDate: new Date("2026-05-07T18:00:00.000Z"),
+        dueString: "every Thursday at 7pm",
+        dueIsRecurring: true,
+        checked: false,
+        raw: { due: { datetime: "2026-05-07T18:00:00.000Z" } },
+      }),
+    ];
+    rows.notionPages = [
+      notionPage({
+        id: "home-project",
+        title: "Home",
+      }),
+      notionPage({
+        id: "notion-riverford",
+        title: "Riverford boxes outside",
+        status: "Done",
+        dateStart: new Date("2026-05-06T18:00:00.000Z"),
+        parentId: "home-project",
+      }),
+    ];
+    rows.taskLinks = [
+      {
+        id: "link-riverford",
+        notionPageId: "notion-riverford",
+        todoistTaskId: "todoist-riverford",
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+        lastSyncAt: new Date("2026-05-01T00:00:00.000Z"),
+        lastSyncHash: "hash",
+        pendingOrigin: null,
+      },
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T16:43:00.000Z"));
+
+    expect(data.todayTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Riverford boxes outside",
+          done: false,
+          source: "both",
+          notionPageId: "notion-riverford",
+          todoistTaskId: "todoist-riverford",
+          hasRecurringTag: true,
+        }),
+      ]),
+    );
+  });
+});

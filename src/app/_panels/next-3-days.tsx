@@ -135,6 +135,7 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
             ))}
           </div>
           <div
+            style={{ touchAction: "pan-y" }}
             onTouchStart={(e) => {
               if (!canSwipe) return;
               setTouchStartX(e.touches[0]?.clientX ?? null);

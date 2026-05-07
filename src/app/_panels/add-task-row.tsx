@@ -137,7 +137,7 @@ export function AddTaskRow({ notionProjectPicklist }: { notionProjectPicklist: N
       />
       {error && <span className="text-[11px] text-red-500">{error}</span>}
       {mentionQuery !== null && filteredProjects.length > 0 && (
-        <div className="absolute top-full left-9 z-10 mt-1 max-h-56 w-[24rem] overflow-y-auto rounded border border-border bg-bg-elevated p-1 shadow-sm">
+        <div className="absolute top-full right-4 left-4 z-10 mt-1 max-h-56 overflow-y-auto rounded border border-border bg-bg-elevated p-1 shadow-sm sm:right-auto sm:left-9 sm:w-[24rem]">
           {filteredProjects.map((project) => (
             <button
               key={project.id}

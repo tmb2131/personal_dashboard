@@ -18,7 +18,7 @@ export function SectionHeader({
   return (
     <div
       className={cn(
-        "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 pt-5 pb-3 text-[11px] tracking-[0.14em] text-fg-subtle",
+        "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 pt-5 pb-3 text-[11px] tracking-[0.14em] text-fg-subtle sm:px-5",
         className,
       )}
     >
@@ -30,7 +30,7 @@ export function SectionHeader({
           <span className="ml-1.5 tabular-nums text-fg-muted normal-case tracking-normal">{count}</span>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-3 normal-case tracking-normal">
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-3 normal-case tracking-normal">
         {children}
         {source && <span className="text-fg-subtle">{source}</span>}
       </div>

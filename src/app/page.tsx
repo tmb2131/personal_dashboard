@@ -50,7 +50,7 @@ npm run dev`}
     return (
       <TodayRecurringTasksProvider>
         <AutoTodoistSync />
-        <main className="flex min-h-dvh flex-col">
+        <main className="flex min-h-dvh flex-col overflow-x-clip">
           <HeroHeader meta={data.meta} initialNow={data.now} />
           <div className="flex flex-1 items-center justify-center p-8">
             <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 text-center">
@@ -75,7 +75,7 @@ npm run dev`}
   return (
     <TodayRecurringTasksProvider>
       <AutoTodoistSync />
-      <main className="flex min-h-dvh flex-col">
+      <main className="flex min-h-dvh flex-col overflow-x-clip">
         <HeroHeader meta={data.meta} initialNow={data.now} />
         <Next3Days groups={data.next3Days} />
 

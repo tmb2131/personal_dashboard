@@ -343,7 +343,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           inProgress: t.labels.includes("in-progress"),
           projectId: null,
           projectTitle: linkedProject?.title ?? null,
-          categoryTitle: personalProject.name,
+          categoryTitle: personalProject?.name ?? "Personal",
           estimateMinutes: null,
           hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
         });

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Subtask } from "@/lib/dashboard-data";
-import { formatRelativeDay, formatTimeWithSuffix } from "@/lib/utils";
+import { cn, formatRelativeDay, formatTimeWithSuffix } from "@/lib/utils";
 import { setTodoistTaskDueAction } from "../actions";
 import { SectionHeader } from "./section-header";
 
@@ -27,12 +27,21 @@ function PersonalTaskDueEditor({ t }: { t: Subtask }) {
   const initialRef = t.date ?? t.deadline;
   const [draft, setDraft] = useState(initialRef ? toLocalDatetimeInputValue(initialRef) : "");
 
+  if (!t.todoistTaskId) {
+    return (
+      <span className="shrink-0 text-[11px] text-fg-subtle tabular-nums">
+        {formatDue(t.date, t.dateHasTime, t.deadline)}
+      </span>
+    );
+  }
+  const todoistTaskId = t.todoistTaskId;
+
   const save = () => {
-    if (!t.todoistTaskId || !draft) return;
+    if (!draft) return;
     setError(null);
     startTransition(async () => {
       const result = await setTodoistTaskDueAction({
-        todoistTaskId: t.todoistTaskId!,
+        todoistTaskId,
         dueDatetime: draft,
       });
       if (!result.ok) {
@@ -45,11 +54,10 @@ function PersonalTaskDueEditor({ t }: { t: Subtask }) {
   };
 
   const clear = () => {
-    if (!t.todoistTaskId) return;
     setError(null);
     startTransition(async () => {
       const result = await setTodoistTaskDueAction({
-        todoistTaskId: t.todoistTaskId!,
+        todoistTaskId,
         dueDatetime: null,
       });
       if (!result.ok) {
@@ -119,26 +127,72 @@ function PersonalTaskDueEditor({ t }: { t: Subtask }) {
   );
 }
 
-export function PersonalTaskList({ tasks }: { tasks: Subtask[] }) {
+type PersonalTaskView = "personal" | "next7Days";
+
+export function PersonalTaskList({
+  tasks,
+  next7DaysTasks,
+}: {
+  tasks: Subtask[];
+  next7DaysTasks: Subtask[];
+}) {
+  const [view, setView] = useState<PersonalTaskView>("personal");
+  const visibleTasks = view === "personal" ? tasks : next7DaysTasks;
+  const emptyCopy =
+    view === "personal"
+      ? "No open Personal tasks."
+      : "No open tasks due in the next 7 days.";
+  const taskContext = (t: Subtask) =>
+    t.projectTitle ? `Notion: ${t.projectTitle}` : t.categoryTitle ? `Todoist: ${t.categoryTitle}` : null;
+
   return (
     <section className="border-t border-border">
-      <SectionHeader eyebrow="Personal" title="Tasks" count={tasks.length} source="todoist" />
+      <SectionHeader
+        eyebrow="Personal"
+        title="Tasks"
+        count={visibleTasks.length}
+        source={view === "personal" ? "todoist" : "todoist + notion"}
+      >
+        <div className="inline-flex rounded-full border border-border bg-bg p-0.5 text-[11px]">
+          {([
+            ["personal", "Personal"],
+            ["next7Days", "Next 7 Days"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setView(value)}
+              aria-pressed={view === value}
+              className={cn(
+                "rounded-full px-2 py-0.5 text-fg-muted transition hover:text-fg",
+                view === value && "bg-bg-elevated text-fg shadow-sm",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </SectionHeader>
 
-      {tasks.length === 0 ? (
-        <div className="px-5 pb-2 text-[12px] text-fg-subtle">No open Personal tasks.</div>
+      {visibleTasks.length === 0 ? (
+        <div className="px-5 pb-2 text-[12px] text-fg-subtle">{emptyCopy}</div>
       ) : (
         <ul>
-          {tasks.map((t) => (
-            <li key={t.key} className="flex items-start justify-between gap-3 px-5 py-2.5">
-              <div className="min-w-0">
-                <div className="text-[13.5px]">{t.title}</div>
-                {t.projectTitle && (
-                  <div className="mt-0.5 text-[11px] text-fg-subtle">Notion: {t.projectTitle}</div>
-                )}
-              </div>
-              <PersonalTaskDueEditor t={t} />
-            </li>
-          ))}
+          {visibleTasks.map((t) => {
+            const context = taskContext(t);
+
+            return (
+              <li key={t.key} className="flex items-start justify-between gap-3 px-5 py-2.5">
+                <div className="min-w-0">
+                  <div className="text-[13.5px]">{t.title}</div>
+                  {context && (
+                    <div className="mt-0.5 text-[11px] text-fg-subtle">{context}</div>
+                  )}
+                </div>
+                <PersonalTaskDueEditor t={t} />
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

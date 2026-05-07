@@ -102,6 +102,7 @@ export type DashboardData = {
   todayEvents: CalendarEvent[];
   todayTasks: Subtask[];
   personalTasks: Subtask[];
+  next7DaysTasks: Subtask[];
   /** Top-level Notion "Task name" rows for choosing a parent when posting Todoist → Notion. */
   notionProjectPicklist: { id: string; title: string }[];
   /** Active Notion categories (relation target) for the "+ New project" form. */
@@ -190,6 +191,8 @@ function sortProjectsByNextStepDue(a: Project, b: Project): number {
 
 export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const todayStart = startOfDay(now);
+  const tomorrowStart = startOfDay(addDays(now, 1));
+  const next7DaysEnd = endOfDay(addDays(now, 7));
   const horizon = endOfDay(addDays(now, 2));
 
   const [events, pages, categories, tasks, links, todoistProjects, syncRows] = await Promise.all([
@@ -312,12 +315,15 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const personalProject = todoistProjects.find((p) => p.name.toLowerCase() === "personal");
   const personalProjectId = personalProject?.id ?? null;
   const personalTasks: Subtask[] = [];
+  const next7DaysTasks: Subtask[] = [];
   for (const proj of allProjects) {
     for (const s of proj.subtasks) {
       const ref = s.date ?? s.deadline;
       if (!ref) continue;
       if (ref >= todayStart && ref <= endOfDay(now)) {
         todayTasks.push(s);
+      } else if (!s.done && !s.hasRecurringTag && ref >= tomorrowStart && ref <= next7DaysEnd) {
+        next7DaysTasks.push(s);
       }
     }
   }
@@ -359,6 +365,28 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     if (linkByTodoist.has(t.id)) continue;
     const ref = t.dueDate ?? t.deadline;
     if (!ref) continue;
+    if (ref >= tomorrowStart && ref <= next7DaysEnd && !t.checked && !hasRecurringTagForTodayPanel(t.labels, t.content)) {
+      const project = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
+      next7DaysTasks.push({
+        key: `t:${t.id}`,
+        title: t.content,
+        status: "Not started",
+        done: false,
+        date: t.dueDate,
+        dateHasTime: todoistDueHasTime(t),
+        deadline: t.deadline,
+        priority: t.priority === 4 ? "High" : t.priority === 3 ? "Medium" : t.priority === 2 ? "Low" : null,
+        source: "todoist",
+        notionPageId: null,
+        todoistTaskId: t.id,
+        inProgress: t.labels.includes("in-progress"),
+        projectId: null,
+        projectTitle: null,
+        categoryTitle: project?.name ?? null,
+        estimateMinutes: null,
+        hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
+      });
+    }
     if (ref < todayStart || ref > endOfDay(now)) continue;
     const project = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
     todayTasks.push({
@@ -389,6 +417,12 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     return ta - tb;
   });
   personalTasks.sort((a, b) => {
+    const ta = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const tb = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    if (ta !== tb) return ta - tb;
+    return a.title.localeCompare(b.title);
+  });
+  next7DaysTasks.sort((a, b) => {
     const ta = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
     const tb = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
     if (ta !== tb) return ta - tb;
@@ -553,6 +587,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     todayEvents,
     todayTasks,
     personalTasks,
+    next7DaysTasks,
     notionProjectPicklist,
     notionCategoryPicklist,
     next3Days,

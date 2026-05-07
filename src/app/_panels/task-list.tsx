@@ -32,7 +32,7 @@ export function TaskList({
       <SectionHeader eyebrow="Today" title="Tasks" count={ratio} source={source}>
         <div className="flex cursor-default select-none items-center gap-2 text-[11px] text-fg-muted">
           <span className="max-w-[9rem] leading-snug normal-case tracking-normal">
-            {showRecurringTodayTasks ? "All tasks" : "Excluding recurring-label"}
+            {showRecurringTodayTasks ? "All tasks" : "Excluding Recurring folder"}
           </span>
           <button
             type="button"
@@ -40,13 +40,13 @@ export function TaskList({
             aria-checked={showRecurringTodayTasks}
             aria-label={
               showRecurringTodayTasks
-                ? "Today list shows every task including recurring-label. Switch to exclude recurring-label tasks."
-                : "Today list hides recurring-label tasks. Switch to show all tasks."
+                ? "Today list shows every task including Recurring folder tasks. Switch to exclude Recurring folder tasks."
+                : "Today list hides Recurring folder tasks. Switch to show all tasks."
             }
             title={
               showRecurringTodayTasks
-                ? "Showing all tasks (toggle to hide recurring-label tasks)"
-                : "Hiding recurring-label tasks (toggle to show every task)"
+                ? "Showing all tasks (toggle to hide Recurring folder tasks)"
+                : "Hiding Recurring folder tasks (toggle to show every task)"
             }
             onClick={() => setShowRecurringTodayTasks(!showRecurringTodayTasks)}
             className="relative inline-flex h-5 w-[34px] shrink-0 rounded-full border border-border bg-bg transition-colors data-[state=on]:border-fg-muted/40 data-[state=on]:bg-bg-elevated"

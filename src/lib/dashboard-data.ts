@@ -1,7 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { hasRecurringTagForTodayPanel } from "@/lib/sync/mappings";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
@@ -36,6 +35,7 @@ export type Next3DaysEvent = {
 export type Subtask = {
   key: string;
   title: string;
+  description: string | null;
   status: NotionPage["status"] | null;
   done: boolean;
   date: Date | null;
@@ -51,7 +51,7 @@ export type Subtask = {
   projectTitle: string | null;
   categoryTitle: string | null;
   estimateMinutes: number | null;
-  /** Todoist label / title `#recurring`; hidden from Today by default, reveal via toggle */
+  /** Todoist task from the Recurring project folder; hidden from Today by default, reveal via toggle */
   hasRecurringTag: boolean;
 };
 
@@ -88,9 +88,9 @@ export type DayGroupedEvents = {
 };
 
 export type DashboardMeta = {
-  /** Open tasks due today excluding recurring-tag (default overview) */
+  /** Open tasks due today excluding Recurring project-folder tasks (default overview) */
   todayOpenCount: number;
-  /** Open recurring-tag tasks due today (add to hero count when toggle is on) */
+  /** Open Recurring project-folder tasks due today (add to hero count when toggle is on) */
   todayOpenRecurringCount: number;
   todayMeetingCount: number;
   nextEvent: { summary: string; start: Date } | null;
@@ -149,6 +149,10 @@ function normalizedTitle(title: string | null | undefined): string | null {
 function todoistDueHasTime(t: TodoistTask): boolean {
   const raw = t.raw as { due?: { datetime?: string | null } } | null;
   return Boolean(raw?.due?.datetime);
+}
+
+function normalizeProjectName(name: string): string {
+  return name.trim().toLowerCase();
 }
 
 /**
@@ -215,6 +219,29 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const todoistProjectById = new Map(todoistProjects.map((p) => [p.id, p]));
+  const todoistChildProjectIdsByParent = new Map<string, string[]>();
+  for (const p of todoistProjects) {
+    if (!p.parentId) continue;
+    const arr = todoistChildProjectIdsByParent.get(p.parentId) ?? [];
+    arr.push(p.id);
+    todoistChildProjectIdsByParent.set(p.parentId, arr);
+  }
+  const recurringRootProjectIds = todoistProjects
+    .filter((p) => normalizeProjectName(p.name) === "recurring")
+    .map((p) => p.id);
+  const recurringProjectIds = new Set<string>(recurringRootProjectIds);
+  const queue = [...recurringRootProjectIds];
+  while (queue.length) {
+    const parentId = queue.shift()!;
+    const childIds = todoistChildProjectIdsByParent.get(parentId) ?? [];
+    for (const childId of childIds) {
+      if (recurringProjectIds.has(childId)) continue;
+      recurringProjectIds.add(childId);
+      queue.push(childId);
+    }
+  }
+  const isRecurringProjectTask = (projectId: string | null | undefined): boolean =>
+    Boolean(projectId && recurringProjectIds.has(projectId));
   const linkByNotion = new Map(links.map((l) => [l.notionPageId, l]));
   const linkByTodoist = new Map(links.map((l) => [l.todoistTaskId, l]));
   const pageById = new Map(pages.map((p) => [p.id, p]));
@@ -245,6 +272,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     return {
       key: `n:${p.id}`,
       title: p.title,
+      description: matched?.description ?? null,
       status: p.status,
       done: p.status === "Done" || Boolean(matched?.checked),
       date: p.dateStart ?? matched?.dueDate ?? null,
@@ -259,7 +287,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       projectTitle: parentProject?.title ?? null,
       categoryTitle: cat?.title ?? null,
       estimateMinutes: null,
-      hasRecurringTag: hasRecurringTagForTodayPanel(matched?.labels ?? [], p.title),
+      hasRecurringTag: isRecurringProjectTask(matched?.projectId),
     };
   }
 
@@ -343,6 +371,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         personalTasks.push({
           key: `p:${t.id}`,
           title: t.content,
+          description: t.description ?? null,
           status: "Not started",
           done: false,
           date: t.dueDate,
@@ -357,7 +386,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           projectTitle: linkedProject?.title ?? null,
           categoryTitle: personalProject?.name ?? "Personal",
           estimateMinutes: null,
-          hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
+          hasRecurringTag: isRecurringProjectTask(t.projectId),
         });
       }
     }
@@ -365,11 +394,12 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     if (linkByTodoist.has(t.id)) continue;
     const ref = t.dueDate ?? t.deadline;
     if (!ref) continue;
-    if (ref >= tomorrowStart && ref <= next7DaysEnd && !t.checked && !hasRecurringTagForTodayPanel(t.labels, t.content)) {
+    if (ref >= tomorrowStart && ref <= next7DaysEnd && !t.checked && !isRecurringProjectTask(t.projectId)) {
       const project = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
       next7DaysTasks.push({
         key: `t:${t.id}`,
         title: t.content,
+        description: t.description ?? null,
         status: "Not started",
         done: false,
         date: t.dueDate,
@@ -384,7 +414,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         projectTitle: null,
         categoryTitle: project?.name ?? null,
         estimateMinutes: null,
-        hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
+        hasRecurringTag: isRecurringProjectTask(t.projectId),
       });
     }
     if (ref < todayStart || ref > endOfDay(now)) continue;
@@ -392,6 +422,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     todayTasks.push({
       key: `t:${t.id}`,
       title: t.content,
+      description: t.description ?? null,
       status: t.checked ? "Done" : "Not started",
       done: t.checked,
       date: t.dueDate,
@@ -406,7 +437,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       projectTitle: null,
       categoryTitle: project?.name ?? null,
       estimateMinutes: null,
-      hasRecurringTag: hasRecurringTagForTodayPanel(t.labels, t.content),
+      hasRecurringTag: isRecurringProjectTask(t.projectId),
     });
 
   }

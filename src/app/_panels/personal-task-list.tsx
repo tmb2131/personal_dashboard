@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import type { Subtask } from "@/lib/dashboard-data";
 import { cn, formatRelativeDay, formatTimeWithSuffix } from "@/lib/utils";
 import { setTodoistTaskDueAction } from "../actions";
+import { setTodoistTaskDescriptionAction } from "../actions";
+import { toggleTaskDoneAction } from "../actions";
 import { SectionHeader } from "./section-header";
 
 function formatDue(date: Date | null, dateHasTime: boolean, deadline: Date | null): string {
@@ -129,6 +131,156 @@ function PersonalTaskDueEditor({ t }: { t: Subtask }) {
 
 type PersonalTaskView = "personal" | "next7Days";
 
+function PersonalTaskRow({
+  t,
+  context,
+}: {
+  t: Subtask;
+  context: string | null;
+}) {
+  const router = useRouter();
+  const [done, setDone] = useState(t.done);
+  const [pending, startTransition] = useTransition();
+  const [expanded, setExpanded] = useState(false);
+  const [draftDescription, setDraftDescription] = useState(t.description ?? "");
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const canToggle = Boolean(t.notionPageId || t.todoistTaskId);
+  const canEditDescription = Boolean(t.todoistTaskId);
+
+  const handleToggleDone = () => {
+    if (!canToggle) return;
+    const next = !done;
+    setDone(next);
+    startTransition(async () => {
+      const result = await toggleTaskDoneAction({
+        notionPageId: t.notionPageId,
+        todoistTaskId: t.todoistTaskId,
+        done: next,
+      });
+      if (!result.ok) {
+        setDone(!next);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const saveDescription = () => {
+    if (!t.todoistTaskId) return;
+    setDescriptionError(null);
+    startTransition(async () => {
+      const result = await setTodoistTaskDescriptionAction({
+        todoistTaskId: t.todoistTaskId!,
+        description: draftDescription,
+      });
+      if (!result.ok) {
+        setDescriptionError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  return (
+    <li className="px-5 py-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+        <button
+          type="button"
+          onClick={handleToggleDone}
+          disabled={!canToggle || pending}
+          aria-label={done ? "Mark not done" : "Mark done"}
+          className={cn(
+            "mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition",
+            done ? "border-fg bg-fg text-bg" : "border-border-strong hover:border-fg-muted",
+            t.inProgress && !done && "border-accent",
+            pending && "opacity-60",
+            !canToggle && "cursor-default",
+          )}
+        >
+          {done && (
+            <svg width="10" height="10" viewBox="0 0 9 9" fill="none">
+              <path
+                d="M1 4.5l2.5 2.5L8 1"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+          {t.inProgress && !done && (
+            <span className="h-[6px] w-[6px] rounded-full bg-accent" />
+          )}
+        </button>
+        <div className="min-w-0">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className={cn(
+              "cursor-pointer text-left text-[13.5px] hover:text-fg-muted",
+              done && "line-through text-fg-subtle",
+            )}
+            title={expanded ? "Hide details" : "Show details"}
+          >
+            {t.title}
+          </button>
+          {context && (
+            <div className={cn("mt-0.5 text-[11px] text-fg-subtle", done && "line-through")}>
+              {context}
+            </div>
+          )}
+        </div>
+      </div>
+      <PersonalTaskDueEditor t={t} />
+      </div>
+      {expanded && (
+        <div className="ml-[30px] mt-2 rounded border border-border bg-bg-elevated/60 p-2">
+          <div className="mb-1 text-[11px] text-fg-subtle">Description</div>
+          {canEditDescription ? (
+            <>
+              <textarea
+                value={draftDescription}
+                onChange={(e) => setDraftDescription(e.target.value)}
+                rows={4}
+                disabled={pending}
+                placeholder="Add task details..."
+                className="w-full resize-y rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg outline-none focus:border-fg-muted"
+              />
+              <div className="mt-1 flex items-center gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={saveDescription}
+                  disabled={pending}
+                  className="rounded border border-border bg-bg px-2 py-0.5 text-fg-muted hover:text-fg disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftDescription(t.description ?? "");
+                    setDescriptionError(null);
+                  }}
+                  disabled={pending}
+                  className="rounded border border-border bg-bg px-2 py-0.5 text-fg-muted hover:text-fg disabled:opacity-50"
+                >
+                  Reset
+                </button>
+                {descriptionError && <span className="text-red-500">{descriptionError}</span>}
+              </div>
+            </>
+          ) : (
+            <div className="text-[12px] text-fg-subtle">
+              {t.description?.trim() || "No description."}
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function PersonalTaskList({
   tasks,
   next7DaysTasks,
@@ -142,8 +294,12 @@ export function PersonalTaskList({
     view === "personal"
       ? "No open Personal tasks."
       : "No open tasks due in the next 7 days.";
-  const taskContext = (t: Subtask) =>
-    t.projectTitle ? `Notion: ${t.projectTitle}` : t.categoryTitle ? `Todoist: ${t.categoryTitle}` : null;
+  const taskContext = (t: Subtask) => {
+    if (t.projectTitle) return `Notion: ${t.projectTitle}`;
+    if (!t.categoryTitle) return null;
+    if (view === "personal" && t.categoryTitle.trim().toLowerCase() === "personal") return null;
+    return `Todoist: ${t.categoryTitle}`;
+  };
 
   return (
     <section className="border-t border-border">
@@ -182,15 +338,7 @@ export function PersonalTaskList({
             const context = taskContext(t);
 
             return (
-              <li key={t.key} className="flex items-start justify-between gap-3 px-5 py-2.5">
-                <div className="min-w-0">
-                  <div className="text-[13.5px]">{t.title}</div>
-                  {context && (
-                    <div className="mt-0.5 text-[11px] text-fg-subtle">{context}</div>
-                  )}
-                </div>
-                <PersonalTaskDueEditor t={t} />
-              </li>
+              <PersonalTaskRow key={t.key} t={t} context={context} />
             );
           })}
         </ul>

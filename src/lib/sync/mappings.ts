@@ -25,19 +25,6 @@ export const PRIORITY_TODOIST_TO_NOTION: Record<number, NotionPage["priority"]> 
 
 export const IN_PROGRESS_LABEL = "in-progress";
 
-/** Tasks with this Todoist label (or `#recurring` in title) skip the Today tasks panel. */
-const RECURRING_TODAY_PANEL_TOKEN = "recurring";
-
-function normalizeDashboardTagToken(raw: string): string {
-  return raw.trim().toLowerCase().replace(/^#+/u, "");
-}
-
-/** True if the synced Todoist labels or displayed title denote a `#recurring` tag. */
-export function hasRecurringTagForTodayPanel(labels: readonly string[], title: string): boolean {
-  if (labels.some((l) => normalizeDashboardTagToken(l) === RECURRING_TODAY_PANEL_TOKEN)) return true;
-  return /(^|[\s/([{])#\s*recurring\b/iu.test(title);
-}
-
 export function notionShouldMirrorToTodoist(p: NotionPage): boolean {
   if (p.archived || p.ignore) return false;
   if (p.status === "Done") return false;

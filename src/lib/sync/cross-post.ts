@@ -50,7 +50,10 @@ function truncateTodoistLabel(s: string): string {
 }
 
 /** Create a Todoist task from a Notion to-do row and insert `task_links`. */
-export async function pushNotionPageToTodoist(notionPageId: string): Promise<void> {
+export async function pushNotionPageToTodoist(
+  notionPageId: string,
+  options?: { todoistProjectId?: string },
+): Promise<void> {
   const [existing] = await db
     .select()
     .from(schema.taskLinks)
@@ -67,7 +70,7 @@ export async function pushNotionPageToTodoist(notionPageId: string): Promise<voi
   }
   if (p.status === "Done") throw new Error("Done tasks are not pushed to Todoist");
 
-  const projectId = await getPersonalProjectId();
+  const projectId = options?.todoistProjectId ?? (await getPersonalProjectId());
 
   const api = todoistApi();
   const args: Record<string, unknown> = {

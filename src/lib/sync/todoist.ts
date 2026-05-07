@@ -44,15 +44,21 @@ export async function getInboxProjectId(): Promise<string> {
   return inbox.id;
 }
 
-/** Todoist project whose name is exactly `Personal` (case-insensitive). */
-export async function getPersonalProjectId(): Promise<string> {
+/** Todoist project whose name matches exactly (trimmed, case-insensitive). */
+export async function getTodoistProjectIdByName(name: string): Promise<string> {
+  const want = name.trim().toLowerCase();
   const result = (await (api() as unknown as {
     getProjects: () => Promise<TodoistProject[] | { results: TodoistProject[] }>;
   }).getProjects()) as TodoistProject[] | { results: TodoistProject[] };
   const list = Array.isArray(result) ? result : result.results;
-  const personal = list.find((p) => (p.name ?? "").trim().toLowerCase() === "personal");
-  if (!personal) throw new Error('Todoist project named "Personal" not found');
-  return personal.id;
+  const match = list.find((p) => (p.name ?? "").trim().toLowerCase() === want);
+  if (!match) throw new Error(`Todoist project named "${name.trim()}" not found`);
+  return match.id;
+}
+
+/** Todoist project whose name is exactly `Personal` (case-insensitive). */
+export async function getPersonalProjectId(): Promise<string> {
+  return getTodoistProjectIdByName("Personal");
 }
 
 async function fetchAllProjects(): Promise<TodoistProject[]> {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatTimeWithSuffix } from "@/lib/utils";
 import type { DashboardMeta } from "@/lib/dashboard-data";
+import { ManualSyncButton } from "./manual-sync-button";
 import { useTodayRecurringTasksVisibility } from "./today-recurring-tasks-context";
 
 function pluralise(n: number, one: string, many: string) {
@@ -56,6 +57,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
       </div>
 
       <div className="ml-auto flex items-center gap-3 text-[13px]">
+        <ManualSyncButton variant="icon" className="mr-1" />
         <span className="tabular-nums text-fg-muted">{timeStr}</span>
         <SourcePill label="Calendar" />
         <SourcePill label="Notion" />

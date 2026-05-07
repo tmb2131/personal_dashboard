@@ -29,13 +29,24 @@ export async function POST() {
         .catch((e) => ({ ok: false as const, error: (e as Error).message }))
     : { ok: false as const, skipped: "no-refresh-token" };
 
-  return NextResponse.json({
-    notion: serializeResult(results[0]),
-    todoist: serializeResult(results[1]),
-    gcal: serializeResult(results[2]),
-    gcalWatchHealthBefore: watchHealthBefore,
-    gcalWatchHealthAfter: watchHealthAfter,
-  });
+  const notionResult = serializeResult(results[0]);
+  const todoistResult = serializeResult(results[1]);
+  const gcalResult = serializeResult(results[2]);
+  const anySyncSucceeded = notionResult.ok || todoistResult.ok || gcalResult.ok;
+  const status = anySyncSucceeded ? 200 : 500;
+
+  return NextResponse.json(
+    {
+      ok: anySyncSucceeded,
+      error: anySyncSucceeded ? undefined : "All sync providers failed",
+      notion: notionResult,
+      todoist: todoistResult,
+      gcal: gcalResult,
+      gcalWatchHealthBefore: watchHealthBefore,
+      gcalWatchHealthAfter: watchHealthAfter,
+    },
+    { status },
+  );
 }
 
 function serializeResult(r: PromiseSettledResult<unknown>) {

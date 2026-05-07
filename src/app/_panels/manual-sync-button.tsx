@@ -24,12 +24,23 @@ export function ManualSyncButton({
     setBusy(true);
     try {
       const res = await fetch("/api/sync/run", { method: "POST" });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        notion?: { ok?: boolean };
+        todoist?: { ok?: boolean };
+        gcal?: { ok?: boolean };
+      };
+      const hasAnyProviderSuccess =
+        body.ok === true ||
+        body.notion?.ok === true ||
+        body.todoist?.ok === true ||
+        body.gcal?.ok === true;
       if (res.status === 401) {
         setError("Sign in required");
         return;
       }
-      if (!res.ok) {
+      if (!res.ok || !hasAnyProviderSuccess) {
         setError(body.error ?? `Sync failed (${res.status})`);
         return;
       }

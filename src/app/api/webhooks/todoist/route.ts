@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (eventName.startsWith("item:")) {
-      const id = typeof eventData.id === "string" ? eventData.id : undefined;
+      const id = todoistIdToString(eventData.id);
       if (eventName === "item:deleted" && id) {
         await deleteTodoistTaskCacheRow(id);
         await logAudit({ source: "webhook-todoist", op: "item_deleted", payload: { id } });
@@ -115,4 +115,10 @@ export async function POST(req: NextRequest) {
 function safeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+function todoistIdToString(id: unknown): string | undefined {
+  if (typeof id === "string" && id.trim()) return id;
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return undefined;
 }

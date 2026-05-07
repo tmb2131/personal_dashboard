@@ -274,9 +274,7 @@ export async function setTodoistTaskDescriptionAction(args: {
   try {
     const api = new TodoistApi(process.env.TODOIST_TOKEN);
     await api.updateTask(args.todoistTaskId, { description: args.description.trim() || "" });
-    await syncTodoistTasksByIds([args.todoistTaskId], {
-      fallbackToFullSync: true,
-    });
+    await syncTodoistTasksByIds([args.todoistTaskId]);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };

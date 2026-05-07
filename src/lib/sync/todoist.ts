@@ -2,6 +2,7 @@ import { TodoistApi } from "@doist/todoist-api-typescript";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
+import { parseDateOnlyLocal } from "@/lib/date-utils";
 
 let _api: TodoistApi | null = null;
 function api() {
@@ -109,12 +110,12 @@ async function fetchAllTasks(): Promise<TodoistTask[]> {
 
 function dueToDate(t: TodoistTask): Date | null {
   if (t.due?.datetime) return new Date(t.due.datetime);
-  if (t.due?.date) return new Date(t.due.date);
+  if (t.due?.date) return parseDateOnlyLocal(t.due.date);
   return null;
 }
 
 function deadlineToDate(t: TodoistTask): Date | null {
-  if (t.deadline?.date) return new Date(t.deadline.date);
+  if (t.deadline?.date) return parseDateOnlyLocal(t.deadline.date);
   return null;
 }
 

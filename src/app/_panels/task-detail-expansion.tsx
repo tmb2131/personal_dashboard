@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Subtask } from "@/lib/dashboard-data";
-import { formatRelativeDay, formatTimeWithSuffix } from "@/lib/utils";
+import { cn, formatRelativeDay, formatTimeWithSuffix } from "@/lib/utils";
 import { setTodoistTaskDescriptionAction, setTodoistTaskDueAction } from "../actions";
 
 function toDateInputValue(d: Date): string {
@@ -31,18 +31,22 @@ export function TaskDetailExpansion({
   extraError?: string | null;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [descriptionPending, startDescriptionTransition] = useTransition();
+  const [duePending, startDueTransition] = useTransition();
   const [descriptionDraft, setDescriptionDraft] = useState(t.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const initialDue = t.date ?? t.deadline;
   const [dueDateDraft, setDueDateDraft] = useState(initialDue ? toDateInputValue(initialDue) : "");
   const [dueTimeDraft, setDueTimeDraft] = useState(initialDue && t.dateHasTime ? toTimeInputValue(initialDue) : "");
+  const [dueMessage, setDueMessage] = useState<string | null>(null);
+  const canEditDue = Boolean(t.todoistTaskId || t.notionPageId);
   const canEditTodoist = Boolean(t.todoistTaskId);
+  const pending = descriptionPending || duePending;
 
   const saveDescription = () => {
     if (!t.todoistTaskId) return;
     setError(null);
-    startTransition(async () => {
+    startDescriptionTransition(async () => {
       const result = await setTodoistTaskDescriptionAction({
         todoistTaskId: t.todoistTaskId!,
         description: descriptionDraft,
@@ -56,11 +60,13 @@ export function TaskDetailExpansion({
   };
 
   const saveDue = (dueDate: string | null, dueTime: string | null) => {
-    if (!t.todoistTaskId) return;
+    if (!canEditDue) return;
     setError(null);
-    startTransition(async () => {
+    setDueMessage(null);
+    startDueTransition(async () => {
       const result = await setTodoistTaskDueAction({
-        todoistTaskId: t.todoistTaskId!,
+        todoistTaskId: t.todoistTaskId,
+        notionPageId: t.notionPageId,
         dueDate,
         dueTime,
       });
@@ -72,6 +78,7 @@ export function TaskDetailExpansion({
         setDueDateDraft("");
         setDueTimeDraft("");
       }
+      setDueMessage("Due date updated");
       router.refresh();
     });
   };
@@ -81,32 +88,54 @@ export function TaskDetailExpansion({
     d.setDate(d.getDate() + daysFromNow);
     const next = toDateInputValue(d);
     setDueDateDraft(next);
-    setDueTimeDraft("");
-    saveDue(next, null);
+    saveDue(next, dueTimeDraft || null);
   };
 
   return (
     <div className="mt-2 ml-[30px] space-y-2 rounded border border-border bg-bg-elevated/60 p-2">
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle">
         <span>Due: {formatTaskDue(t)}</span>
-        {canEditTodoist && (
+        {canEditDue && (
           <>
-            <button type="button" onClick={() => setRelativeDue(0)} className="rounded border border-border px-1.5 py-0.5 hover:text-fg">
+            <button
+              type="button"
+              onClick={() => setRelativeDue(0)}
+              disabled={pending}
+              className={cn(
+                "rounded border border-border px-1.5 py-0.5 hover:text-fg disabled:opacity-50",
+                dueDateDraft === toDateInputValue(new Date()) && "border-fg-muted text-fg",
+              )}
+            >
               Today
             </button>
-            <button type="button" onClick={() => setRelativeDue(1)} className="rounded border border-border px-1.5 py-0.5 hover:text-fg">
+            <button
+              type="button"
+              onClick={() => setRelativeDue(1)}
+              disabled={pending}
+              className="rounded border border-border px-1.5 py-0.5 hover:text-fg disabled:opacity-50"
+            >
               Tomorrow
             </button>
-            <button type="button" onClick={() => setRelativeDue(7)} className="rounded border border-border px-1.5 py-0.5 hover:text-fg">
+            <button
+              type="button"
+              onClick={() => setRelativeDue(7)}
+              disabled={pending}
+              className="rounded border border-border px-1.5 py-0.5 hover:text-fg disabled:opacity-50"
+            >
               Next week
             </button>
-            <button type="button" onClick={() => saveDue(null, null)} className="rounded border border-border px-1.5 py-0.5 hover:text-fg">
+            <button
+              type="button"
+              onClick={() => saveDue(null, null)}
+              disabled={pending}
+              className="rounded border border-border px-1.5 py-0.5 hover:text-fg disabled:opacity-50"
+            >
               No date
             </button>
           </>
         )}
       </div>
-      {canEditTodoist && (
+      {canEditDue && (
         <div className="flex flex-wrap items-center gap-1.5">
           <input
             type="date"
@@ -130,8 +159,13 @@ export function TaskDetailExpansion({
             disabled={pending}
             className="rounded border border-border bg-bg px-1.5 py-0.5 text-[11px] hover:text-fg disabled:opacity-50"
           >
-            Save due
+            {duePending ? "Saving..." : "Save due"}
           </button>
+          {(dueMessage || duePending) && (
+            <span aria-live="polite" className="text-[11px] text-fg-subtle">
+              {duePending ? "Updating due date..." : dueMessage}
+            </span>
+          )}
         </div>
       )}
 

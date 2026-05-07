@@ -1,6 +1,7 @@
 import { Client } from "@notionhq/client";
 import { db, schema } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { parseDateOnlyLocalStrict, parseDateTimeLocal } from "@/lib/date-utils";
 import { notionStatusFromTodoist, PRIORITY_TODOIST_TO_NOTION, type TodoistTask } from "@/lib/sync/mappings";
 
 const TODOS_DS = process.env.NOTION_TODOS_DATA_SOURCE_ID!;
@@ -50,8 +51,8 @@ function readDate(p: AnyProp, key: string) {
   if (!v?.start) return { start: null, end: null, isDatetime: false };
   const isDatetime = v.start.includes("T");
   return {
-    start: v.start ? new Date(v.start) : null,
-    end: v.end ? new Date(v.end) : null,
+    start: v.start ? (isDatetime ? new Date(v.start) : parseDateOnlyLocalStrict(v.start)) : null,
+    end: v.end ? (v.end.includes("T") ? new Date(v.end) : parseDateOnlyLocalStrict(v.end)) : null,
     isDatetime,
   };
 }
@@ -346,6 +347,27 @@ export async function updateNotionFocus(pageId: string, focus: "Yes" | "No") {
   });
 }
 
+export async function updateNotionTaskDate(
+  pageId: string,
+  date: { dueDate: string; dueTime?: string | null } | null,
+) {
+  let dateProp: { start: string } | null = null;
+  if (date) {
+    const parsed = date.dueTime
+      ? parseDateTimeLocal(date.dueDate, date.dueTime)
+      : parseDateOnlyInput(date.dueDate);
+    if (!parsed || Number.isNaN(parsed.getTime())) throw new Error("Invalid date");
+    dateProp = formatNotionDateProp(parsed, Boolean(date.dueTime));
+  }
+
+  await client().pages.update({
+    page_id: pageId,
+    properties: {
+      Date: { date: dateProp },
+    },
+  });
+}
+
 export async function createNotionProject(input: {
   title: string;
   categoryId: string | null;
@@ -380,20 +402,7 @@ export async function createNotionProject(input: {
 }
 
 function parseDateOnlyInput(input: string): Date {
-  const m = input.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) throw new Error("Invalid date format");
-  const y = Number(m[1]);
-  const mo = Number(m[2]) - 1;
-  const d = Number(m[3]);
-  const out = new Date(y, mo, d, 0, 0, 0, 0);
-  if (
-    out.getFullYear() !== y ||
-    out.getMonth() !== mo ||
-    out.getDate() !== d
-  ) {
-    throw new Error("Invalid date");
-  }
-  return out;
+  return parseDateOnlyLocalStrict(input);
 }
 
 type DataSourceObjectResponse = {

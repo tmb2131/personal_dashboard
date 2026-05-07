@@ -337,6 +337,15 @@ export async function updateNotionTodoStatus(
   });
 }
 
+export async function updateNotionFocus(pageId: string, focus: "Yes" | "No") {
+  await client().pages.update({
+    page_id: pageId,
+    properties: {
+      Focus: { select: { name: focus } },
+    },
+  });
+}
+
 type DataSourceObjectResponse = {
   properties: Record<string, { type?: string; [k: string]: unknown }>;
 };

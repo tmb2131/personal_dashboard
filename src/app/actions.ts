@@ -2,9 +2,13 @@
 
 import * as chrono from "chrono-node";
 import { TodoistApi } from "@doist/todoist-api-typescript";
+import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
+import { db, schema } from "@/lib/db";
+import { logAudit } from "@/lib/sync/audit";
 import { applyDashboardToggle } from "@/lib/sync/orchestrator";
 import { pushNotionPageToTodoist, pushTodoistTaskToNotion } from "@/lib/sync/cross-post";
+import { updateNotionFocus } from "@/lib/sync/notion";
 import { syncTodoist } from "@/lib/sync/todoist";
 
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
@@ -118,5 +122,40 @@ export async function toggleTaskDoneAction(args: {
     return { ok: true } as const;
   } catch (e) {
     return { ok: false, error: (e as Error).message } as const;
+  }
+}
+
+export async function setProjectFocusAction(args: {
+  notionPageId: string;
+  focus: "Yes" | "No";
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionPageId) return { ok: false, error: "Missing Notion page" };
+  if (args.focus !== "Yes" && args.focus !== "No") {
+    return { ok: false, error: "Invalid focus value" };
+  }
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    await updateNotionFocus(args.notionPageId, args.focus);
+    await db
+      .update(schema.notionPages)
+      .set({ focus: args.focus, updatedAt: new Date() })
+      .where(eq(schema.notionPages.id, args.notionPageId));
+    await logAudit({
+      source: "dashboard",
+      op: "set_project_focus",
+      payload: args,
+    });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "set_project_focus_error",
+      payload: args,
+      error: (e as Error).message,
+    });
+    return { ok: false, error: (e as Error).message };
   }
 }

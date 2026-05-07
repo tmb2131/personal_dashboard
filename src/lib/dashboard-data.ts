@@ -77,6 +77,7 @@ export type Project = {
 
 export type ProjectGroups = {
   focus: Project[];
+  nonFocus: Project[];
   all: Project[];
 };
 
@@ -138,6 +139,44 @@ function normalizedTitle(title: string | null | undefined): string | null {
   const v = (title ?? "").trim();
   if (!v || v === "0" || v === "(untitled)") return null;
   return v;
+}
+
+/**
+ * Due timestamp for the open sub-item treated as "next step" in the Projects panel
+ * (in-progress first, then soonest date/deadline). Projects with no dated next step sort last.
+ */
+function nextStepSubtaskDueMs(p: Project): number {
+  const open = p.subtasks.filter((s) => !s.done);
+  if (open.length === 0) return Number.MAX_SAFE_INTEGER;
+
+  const sorted = [...open].sort((a, b) => {
+    if (a.inProgress !== b.inProgress) return a.inProgress ? -1 : 1;
+    const at = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bt = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    if (at !== bt) return at - bt;
+    return a.title.localeCompare(b.title);
+  });
+
+  if (p.keyNextStep) {
+    const match = sorted.find((s) => s.title === p.keyNextStep);
+    if (match) {
+      const t = (match.date ?? match.deadline)?.getTime();
+      if (t != null) return t;
+    }
+  }
+
+  const first = sorted[0];
+  return (first.date ?? first.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+}
+
+function sortProjectsByNextStepDue(a: Project, b: Project): number {
+  const at = nextStepSubtaskDueMs(a);
+  const bt = nextStepSubtaskDueMs(b);
+  if (at !== bt) return at - bt;
+  const ad = a.daysSinceUpdate ?? 999;
+  const bd = b.daysSinceUpdate ?? 999;
+  if (ad !== bd) return ad - bd;
+  return b.openSubtasks - a.openSubtasks;
 }
 
 export async function loadDashboard(now = new Date()): Promise<DashboardData> {
@@ -398,22 +437,23 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   // ----- Project groups
   const isTrip = (p: Project) => /travel/i.test(p.categoryTitle ?? "");
   const isLifeArea = (p: Project) => p.isLifeArea;
+  // Skip accidental empty rows in Notion (no title, no children, no notes/next step).
+  // The DB still contains them but they're noise on the dashboard.
+  const isEmptyShell = (p: Project) =>
+    normalizedTitle(p.title) === null &&
+    p.totalSubtasks === 0 &&
+    !p.keyNextStep &&
+    !p.notes;
 
   const nonTripNonArea = allProjects.filter(
-    (p) => !isTrip(p) && !isLifeArea(p) && p.status !== "Done",
+    (p) => !isTrip(p) && !isLifeArea(p) && p.status !== "Done" && !isEmptyShell(p),
   );
-  const focus = nonTripNonArea
-    .filter((p) => p.focus === "Yes")
-    .sort((a, b) => {
-      const ad = a.daysSinceUpdate ?? 999;
-      const bd = b.daysSinceUpdate ?? 999;
-      if (ad !== bd) return ad - bd;
-      return b.openSubtasks - a.openSubtasks;
-    });
+  const sortedProjects = [...nonTripNonArea].sort(sortProjectsByNextStepDue);
 
   const projects: ProjectGroups = {
-    focus,
-    all: nonTripNonArea,
+    focus: sortedProjects.filter((p) => p.focus === "Yes"),
+    nonFocus: sortedProjects.filter((p) => p.focus !== "Yes"),
+    all: sortedProjects,
   };
 
   // ----- Trips (Travel/Events only; include Done; start date today or later)

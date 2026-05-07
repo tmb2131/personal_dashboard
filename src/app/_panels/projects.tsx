@@ -2,7 +2,9 @@
 
 import { categoryDot, cn, shortCategoryLabel } from "@/lib/utils";
 import type { Project, ProjectGroups } from "@/lib/dashboard-data";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { setProjectFocusAction } from "../actions";
 import { SectionHeader } from "./section-header";
 
 function ProgressBar({ done, total }: { done: number; total: number }) {
@@ -14,7 +16,29 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
   );
 }
 
+function FocusStarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden className="block">
+      <path
+        d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ProjectRow({ p }: { p: Project }) {
+  const router = useRouter();
+  const [isFocus, setIsFocus] = useState(p.focus === "Yes");
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setIsFocus(p.focus === "Yes");
+  }, [p.focus]);
+
   const dot = categoryDot(p.categoryTitle);
   const cat = shortCategoryLabel(p.categoryTitle);
   const fallbackSubtask = [...p.subtasks]
@@ -27,9 +51,40 @@ function ProjectRow({ p }: { p: Project }) {
       return a.title.localeCompare(b.title);
     })[0];
   const nextStep = p.keyNextStep ?? fallbackSubtask?.title ?? null;
+
+  const handleToggleFocus = () => {
+    const next = !isFocus;
+    setIsFocus(next);
+    startTransition(async () => {
+      const result = await setProjectFocusAction({
+        notionPageId: p.id,
+        focus: next ? "Yes" : "No",
+      });
+      if (!result.ok) {
+        setIsFocus(!next);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
   return (
     <li className="px-5 py-2.5">
       <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={handleToggleFocus}
+          aria-label={isFocus ? "Remove from Focus" : "Mark as Focus"}
+          aria-pressed={isFocus}
+          disabled={pending}
+          className={cn(
+            "flex h-4 w-4 shrink-0 items-center justify-center rounded transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted/40",
+            isFocus ? "text-fg" : "text-fg-subtle hover:text-fg-muted",
+            pending && "opacity-60",
+          )}
+        >
+          <FocusStarIcon filled={isFocus} />
+        </button>
         <span
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ background: dot }}
@@ -49,7 +104,7 @@ function ProjectRow({ p }: { p: Project }) {
           )}
         </span>
       </div>
-      <div className="mt-1.5 ml-[18px] flex items-center gap-3">
+      <div className="mt-1.5 ml-[44px] flex items-center gap-3">
         {nextStep ? (
           <span className="truncate text-[12px] text-fg-muted">
             <span className="text-fg-subtle">→</span> {nextStep}
@@ -91,13 +146,22 @@ function Tab({
 }
 
 export function Projects({ groups }: { groups: ProjectGroups }) {
-  const [view, setView] = useState<"focus" | "all">("focus");
-  const list = view === "focus" ? groups.focus : groups.all;
+  const [view, setView] = useState<"focus" | "nonFocus" | "all">("focus");
+  const list =
+    view === "focus" ? groups.focus : view === "nonFocus" ? groups.nonFocus : groups.all;
+
+  const emptyMessage =
+    view === "focus"
+      ? "No focused projects"
+      : view === "nonFocus"
+        ? "No non-focus projects"
+        : "No projects";
+
   return (
     <section className="border-t border-border">
       <SectionHeader eyebrow="Projects" title="" count={groups.all.length} source="notion" />
 
-      <div className="flex items-center gap-1 px-5 pb-2">
+      <div className="flex flex-wrap items-center gap-1 px-5 pb-2">
         <button
           onClick={() => setView("focus")}
           type="button"
@@ -105,6 +169,14 @@ export function Projects({ groups }: { groups: ProjectGroups }) {
           className="rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted/40"
         >
           <Tab label="Focus" count={groups.focus.length} active={view === "focus"} />
+        </button>
+        <button
+          onClick={() => setView("nonFocus")}
+          type="button"
+          aria-pressed={view === "nonFocus"}
+          className="rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted/40"
+        >
+          <Tab label="Non-Focus" count={groups.nonFocus.length} active={view === "nonFocus"} />
         </button>
         <button
           onClick={() => setView("all")}
@@ -117,12 +189,10 @@ export function Projects({ groups }: { groups: ProjectGroups }) {
       </div>
 
       {list.length === 0 ? (
-        <div className="px-5 pb-5 text-[12px] text-fg-subtle">
-          {view === "focus" ? "No focused projects" : "No projects"}
-        </div>
+        <div className="px-5 pb-5 text-[12px] text-fg-subtle">{emptyMessage}</div>
       ) : (
         <ul>
-          {list.slice(0, 8).map((p) => (
+          {list.map((p) => (
             <ProjectRow key={p.id} p={p} />
           ))}
         </ul>

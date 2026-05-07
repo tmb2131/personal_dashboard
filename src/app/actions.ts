@@ -272,9 +272,30 @@ export async function createProjectSubtaskAction(args: {
   if (!args.notionParentPageId) return { ok: false, error: "Missing project page" };
   if (!args.title.trim()) return { ok: false, error: "Task title is required" };
   if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+  if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
 
   try {
-    await createNotionProjectSubtask(args);
+    const { pageId } = await createNotionProjectSubtask(args);
+
+    const api = new TodoistApi(process.env.TODOIST_TOKEN);
+    const projects = (await (api as unknown as {
+      getProjects: () => Promise<{ id: string; name: string }[] | { results: { id: string; name: string }[] }>;
+    }).getProjects()) as { id: string; name: string }[] | { results: { id: string; name: string }[] };
+    const list = Array.isArray(projects) ? projects : projects.results;
+    const notionProject = list.find((p) => p.name.toLowerCase() === "notion");
+    const projectId = notionProject?.id ?? (await getPersonalProjectId());
+
+    const payload: Parameters<typeof api.addTask>[0] = {
+      content: args.title.trim(),
+      projectId,
+    };
+    if (args.dueDate) {
+      payload.dueDate = args.dueDate;
+    }
+    const created = await api.addTask(payload);
+    await syncTodoistTasksByIds([created.id]);
+    await insertTaskLinkForPair(pageId, created.id);
+
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };

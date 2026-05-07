@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
+import { parseDateOnlyLocal } from "@/lib/date-utils";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
 export type NotionPage = InferSelectModel<typeof schema.notionPages>;
@@ -154,15 +155,55 @@ function taskRangeSortMs(date: Date | null, deadline: Date | null, start: Date, 
   return (date ?? deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
 }
 
+function parseTodoistDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return parseDateOnlyLocal(value);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function normalizedTitle(title: string | null | undefined): string | null {
   const v = (title ?? "").trim();
   if (!v || v === "0" || v === "(untitled)") return null;
   return v;
 }
 
+function todoistRawDue(t: TodoistTask) {
+  const raw = t.raw as {
+    due?: {
+      datetime?: string | null;
+      date?: string | null;
+      due_datetime?: string | null;
+      due_date?: string | null;
+    } | null;
+  } | null;
+  return raw?.due ?? null;
+}
+
+function todoistRawDeadline(t: TodoistTask) {
+  const raw = t.raw as { deadline?: { date?: string | null } | null } | null;
+  return raw?.deadline ?? null;
+}
+
+function todoistDueDate(t: TodoistTask): Date | null {
+  const rawDue = todoistRawDue(t);
+  return (
+    t.dueDate ??
+    parseTodoistDate(rawDue?.datetime) ??
+    parseTodoistDate(rawDue?.due_datetime) ??
+    parseTodoistDate(rawDue?.date) ??
+    parseTodoistDate(rawDue?.due_date)
+  );
+}
+
+function todoistDeadlineDate(t: TodoistTask): Date | null {
+  const rawDeadline = todoistRawDeadline(t);
+  return t.deadline ?? parseTodoistDate(rawDeadline?.date);
+}
+
 function todoistDueHasTime(t: TodoistTask): boolean {
-  const raw = t.raw as { due?: { datetime?: string | null } } | null;
-  return Boolean(raw?.due?.datetime);
+  const rawDue = todoistRawDue(t);
+  return Boolean(rawDue?.datetime ?? rawDue?.due_datetime);
 }
 
 function normalizeProjectName(name: string): string {
@@ -309,9 +350,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       description: p.notes ?? matched?.description ?? null,
       status: p.status,
       done: p.status === "Done" || Boolean(matched?.checked),
-      date: p.dateStart ?? matched?.dueDate ?? null,
+      date: p.dateStart ?? (matched ? todoistDueDate(matched) : null),
       dateHasTime: Boolean(p.dateIsDatetime || (matched && todoistDueHasTime(matched))),
-      deadline: p.deadline ?? matched?.deadline ?? null,
+      deadline: p.deadline ?? (matched ? todoistDeadlineDate(matched) : null),
       priority: p.priority ?? null,
       source: matched ? "both" : "notion",
       notionPageId: p.id,
@@ -406,7 +447,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     const linkedPage = link?.notionPageId ? pageById.get(link.notionPageId) : undefined;
     const linkedProject = linkedPage?.parentId ? pageById.get(linkedPage.parentId) : linkedPage;
     const todoistProject = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
-    const isDueToday = taskHasDateInRange(t.dueDate, t.deadline, todayStart, todayEnd);
+    const tDueDate = todoistDueDate(t);
+    const tDeadline = todoistDeadlineDate(t);
+    const isDueToday = taskHasDateInRange(tDueDate, tDeadline, todayStart, todayEnd);
 
     if (!t.checked && t.projectId && personalProjectIds.has(t.projectId)) {
       if (!isDueToday) {
@@ -416,9 +459,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           description: t.description ?? null,
           status: "Not started",
           done: false,
-          date: t.dueDate,
+          date: tDueDate,
           dateHasTime: todoistDueHasTime(t),
-          deadline: t.deadline,
+          deadline: tDeadline,
           priority: todoistPriorityToNotion(t.priority),
           source: link ? "both" : "todoist",
           notionPageId: link?.notionPageId ?? null,
@@ -433,14 +476,14 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       }
     }
 
-    if (!t.dueDate && !t.deadline) continue;
+    if (!tDueDate && !tDeadline) continue;
 
     if (link && (t.checked || openTodoistIdsAlreadyShownToday.has(t.id))) continue;
 
     if (
       !link &&
       !isDueToday &&
-      taskHasDateInRange(t.dueDate, t.deadline, tomorrowStart, next7DaysEnd) &&
+      taskHasDateInRange(tDueDate, tDeadline, tomorrowStart, next7DaysEnd) &&
       !t.checked &&
       !isRecurringProjectTask(t.projectId)
     ) {
@@ -450,9 +493,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         description: t.description ?? null,
         status: "Not started",
         done: false,
-        date: t.dueDate,
+        date: tDueDate,
         dateHasTime: todoistDueHasTime(t),
-        deadline: t.deadline,
+        deadline: tDeadline,
         priority: todoistPriorityToNotion(t.priority),
         source: "todoist",
         notionPageId: null,
@@ -472,9 +515,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       description: t.description ?? null,
       status: t.checked ? "Done" : "Not started",
       done: t.checked,
-      date: t.dueDate,
+      date: tDueDate,
       dateHasTime: todoistDueHasTime(t),
-      deadline: t.deadline,
+      deadline: tDeadline,
       priority: todoistPriorityToNotion(t.priority),
       source: link ? "both" : "todoist",
       notionPageId: link?.notionPageId ?? null,

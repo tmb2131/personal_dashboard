@@ -11,6 +11,28 @@ export type TodoistTask = InferSelectModel<typeof schema.todoistTasks>;
 export type TodoistProject = InferSelectModel<typeof schema.todoistProjects>;
 export type TaskLink = InferSelectModel<typeof schema.taskLinks>;
 
+export type Next3DaysOwner = "thomas" | "sriya" | "both" | "other";
+
+export type Next3DaysEvent = {
+  /**
+   * Panel display identity for React keys.
+   * Duplicates across calendars are collapsed into a single row.
+   */
+  id: string;
+  owner: Next3DaysOwner;
+  ownerLabel: string;
+  /**
+   * Lowercased calendar IDs that contributed to this row.
+   * Useful if the same signature appears in more than one calendar.
+   */
+  calendarIds: string[];
+  summary: CalendarEvent["summary"];
+  location: CalendarEvent["location"];
+  start: CalendarEvent["start"];
+  end: CalendarEvent["end"];
+  allDay: CalendarEvent["allDay"];
+};
+
 export type Subtask = {
   key: string;
   title: string;
@@ -60,7 +82,7 @@ export type ProjectGroups = {
 
 export type DayGroupedEvents = {
   bucket: DayBucket;
-  events: CalendarEvent[];
+  events: Next3DaysEvent[];
 };
 
 export type DashboardMeta = {
@@ -271,10 +293,101 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   });
   // ----- Next 3 days events grouped
   const buckets = makeDayBuckets(now, 3);
-  const next3Days: DayGroupedEvents[] = buckets.map((b) => ({
-    bucket: b,
-    events: events.filter((e) => e.start && bucketKey(new Date(e.start)) === b.key),
-  }));
+
+  const THOMAS_CALENDAR_ID = "thomas.brosens@gmail.com";
+  const SRIYA_CALENDAR_ID = "sriya.sundaresan@gmail.com";
+  const thomasLower = THOMAS_CALENDAR_ID.toLowerCase();
+  const sriyaLower = SRIYA_CALENDAR_ID.toLowerCase();
+
+  function normalizeForDedupe(s: string | null): string {
+    return (s ?? "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+  }
+
+  function ownerFromCalendarIds(ids: Set<string>): Pick<Next3DaysEvent, "owner" | "ownerLabel"> {
+    const hasThomas = ids.has(thomasLower);
+    const hasSriya = ids.has(sriyaLower);
+    if (hasThomas && hasSriya) {
+      return {
+        owner: "both",
+        ownerLabel: `${THOMAS_CALENDAR_ID} + ${SRIYA_CALENDAR_ID}`,
+      };
+    }
+    if (hasThomas) return { owner: "thomas", ownerLabel: THOMAS_CALENDAR_ID };
+    if (hasSriya) return { owner: "sriya", ownerLabel: SRIYA_CALENDAR_ID };
+    return { owner: "other", ownerLabel: [...ids][0] ?? "" };
+  }
+
+  type BucketMergedEntry = {
+    id: string;
+    start: Date | null;
+    end: Date | null;
+    allDay: boolean;
+    summary: string | null;
+    location: string | null;
+    calendarIds: Set<string>;
+  };
+
+  const bucketsByKey = new Set(buckets.map((b) => b.key));
+  const mergedByBucket = new Map<string, Map<string, BucketMergedEntry>>();
+
+  for (const e of events) {
+    if (!e.start) continue;
+    const dayKey = bucketKey(new Date(e.start));
+    if (!bucketsByKey.has(dayKey)) continue;
+
+    const startIso = e.start ? e.start.toISOString() : "null";
+    const endIso = e.end ? e.end.toISOString() : "null";
+    const sig = `${startIso}|${endIso}|${normalizeForDedupe(e.summary)}|${normalizeForDedupe(e.location)}`;
+
+    const bucketMap = mergedByBucket.get(dayKey) ?? new Map<string, BucketMergedEntry>();
+    const existing = bucketMap.get(sig);
+    if (existing) {
+      existing.calendarIds.add(e.calendarId.toLowerCase());
+      continue;
+    }
+
+    bucketMap.set(sig, {
+      id: sig,
+      start: e.start,
+      end: e.end,
+      allDay: e.allDay,
+      summary: e.summary ?? null,
+      location: e.location ?? null,
+      calendarIds: new Set([e.calendarId.toLowerCase()]),
+    });
+    mergedByBucket.set(dayKey, bucketMap);
+  }
+
+  const next3Days: DayGroupedEvents[] = buckets.map((b) => {
+    const bucketMap = mergedByBucket.get(b.key) ?? new Map<string, BucketMergedEntry>();
+
+    const mergedEvents: Next3DaysEvent[] = [...bucketMap.values()].map((entry) => {
+      const owner = ownerFromCalendarIds(entry.calendarIds);
+      return {
+        id: entry.id,
+        owner: owner.owner,
+        ownerLabel: owner.ownerLabel,
+        calendarIds: [...entry.calendarIds],
+        summary: entry.summary,
+        location: entry.location,
+        start: entry.start,
+        end: entry.end,
+        allDay: entry.allDay,
+      };
+    });
+
+    mergedEvents.sort((a, b) => {
+      const at = a.start?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const bt = b.start?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      if (at !== bt) return at - bt;
+      return (a.summary ?? "").localeCompare(b.summary ?? "");
+    });
+
+    return { bucket: b, events: mergedEvents };
+  });
 
   // ----- Project groups
   const isTrip = (p: Project) => /travel/i.test(p.categoryTitle ?? "");

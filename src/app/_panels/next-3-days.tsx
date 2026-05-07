@@ -2,6 +2,11 @@ import { formatTimeWithSuffix } from "@/lib/utils";
 import type { DayGroupedEvents } from "@/lib/dashboard-data";
 import { SectionHeader } from "./section-header";
 
+const OWNER_DOT = {
+  thomas: "#D98783",
+  sriya: "#DCC35A",
+} as const;
+
 function locationFor(e: DayGroupedEvents["events"][number]): string {
   if (e.location) return e.location;
   // Fall back to conferencing hint embedded in summary
@@ -45,8 +50,28 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
                       </span>
                       <span className="min-w-0 flex-1 truncate">{e.summary ?? "(no title)"}</span>
                       {loc && (
-                        <span className="ml-2 shrink-0 truncate text-[11px] text-fg-subtle">
+                        <span className="shrink-0 truncate text-[11px] text-fg-subtle">
                           {loc}
+                        </span>
+                      )}
+                      {e.owner !== "other" && (
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {(e.owner === "thomas" || e.owner === "both") && (
+                            <span
+                              aria-label="thomas.brosens@gmail.com"
+                              title="thomas.brosens@gmail.com"
+                              className="h-2 w-2 rounded-full"
+                              style={{ backgroundColor: OWNER_DOT.thomas }}
+                            />
+                          )}
+                          {(e.owner === "sriya" || e.owner === "both") && (
+                            <span
+                              aria-label="sriya.sundaresan@gmail.com"
+                              title="sriya.sundaresan@gmail.com"
+                              className="h-2 w-2 rounded-full"
+                              style={{ backgroundColor: OWNER_DOT.sriya }}
+                            />
+                          )}
                         </span>
                       )}
                     </li>

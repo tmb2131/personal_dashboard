@@ -1,4 +1,5 @@
 import { TodoistApi } from "@doist/todoist-api-typescript";
+import type { InferSelectModel } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
 
@@ -29,6 +30,8 @@ type TodoistProject = {
   color?: string;
   isArchived?: boolean;
 };
+
+type TodoistTaskRow = InferSelectModel<typeof schema.todoistTasks>;
 
 /** Todoist inbox project id (REST v2 marks inbox explicitly when present). */
 export async function getInboxProjectId(): Promise<string> {
@@ -134,9 +137,47 @@ export function mapTodoistTaskToRow(t: TodoistTask, updatedAt: Date) {
   };
 }
 
-export async function syncTodoist() {
+function sameTime(a: Date | null, b: Date | null) {
+  return (a?.getTime() ?? null) === (b?.getTime() ?? null);
+}
+
+function sameLabels(a: string[], b: string[]) {
+  return a.length === b.length && a.every((label, i) => label === b[i]);
+}
+
+function todoistRowsMatch(existing: TodoistTaskRow, next: ReturnType<typeof mapTodoistTaskToRow>) {
+  return (
+    existing.projectId === next.projectId &&
+    existing.parentId === next.parentId &&
+    existing.content === next.content &&
+    existing.description === next.description &&
+    sameTime(existing.dueDate, next.dueDate) &&
+    existing.dueString === next.dueString &&
+    existing.dueIsRecurring === next.dueIsRecurring &&
+    sameTime(existing.deadline, next.deadline) &&
+    existing.priority === next.priority &&
+    existing.checked === next.checked &&
+    sameLabels(existing.labels ?? [], next.labels)
+  );
+}
+
+export type SyncTodoistResult = {
+  projects: number;
+  tasks: number;
+  changedTaskIds: string[];
+  completedTaskIds: string[];
+  completedRecurringTaskIds: string[];
+};
+
+export async function syncTodoist(): Promise<SyncTodoistResult> {
   const [projects, tasks] = await Promise.all([fetchAllProjects(), fetchAllTasks()]);
   const now = new Date();
+  const existingTasks = await db.select().from(schema.todoistTasks);
+  const existingTaskById = new Map(existingTasks.map((t) => [t.id, t]));
+  const activeTaskIds = new Set(tasks.map((t) => t.id));
+  const changedTaskIds: string[] = [];
+  const completedTaskIds: string[] = [];
+  const completedRecurringTaskIds: string[] = [];
 
   if (projects.length) {
     await db
@@ -165,10 +206,16 @@ export async function syncTodoist() {
       });
   }
 
-  if (tasks.length) {
+  const taskRows = tasks.map((t) => mapTodoistTaskToRow(t, now));
+  for (const row of taskRows) {
+    const existing = existingTaskById.get(row.id);
+    if (!existing || !todoistRowsMatch(existing, row)) changedTaskIds.push(row.id);
+  }
+
+  if (taskRows.length) {
     await db
       .insert(schema.todoistTasks)
-      .values(tasks.map((t) => mapTodoistTaskToRow(t, now)))
+      .values(taskRows)
       .onConflictDoUpdate({
         target: schema.todoistTasks.id,
         set: {
@@ -189,6 +236,16 @@ export async function syncTodoist() {
       });
   }
 
+  for (const task of existingTasks) {
+    if (task.checked || activeTaskIds.has(task.id)) continue;
+    await db
+      .update(schema.todoistTasks)
+      .set({ checked: true, updatedAt: now })
+      .where(eq(schema.todoistTasks.id, task.id));
+    completedTaskIds.push(task.id);
+    if (task.dueIsRecurring) completedRecurringTaskIds.push(task.id);
+  }
+
   await db
     .insert(schema.syncState)
     .values({
@@ -200,7 +257,13 @@ export async function syncTodoist() {
       set: { lastFullSyncAt: now },
     });
 
-  return { projects: projects.length, tasks: tasks.length };
+  return {
+    projects: projects.length,
+    tasks: tasks.length,
+    changedTaskIds,
+    completedTaskIds,
+    completedRecurringTaskIds,
+  };
 }
 
 /** Fetch and upsert specific tasks (incremental webhook path). */

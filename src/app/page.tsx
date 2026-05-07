@@ -7,6 +7,7 @@ import { Projects } from "./_panels/projects";
 import { UpcomingTrips } from "./_panels/upcoming-trips";
 import { LifeAreas } from "./_panels/life-areas";
 import { ManualSyncButton } from "./_panels/manual-sync-button";
+import { AutoTodoistSync } from "./_panels/auto-todoist-sync";
 import { TodayRecurringTasksProvider } from "./_panels/today-recurring-tasks-context";
 import { loadDashboardSafe } from "@/lib/dashboard-data";
 
@@ -48,6 +49,7 @@ npm run dev`}
   if (data.isEmpty) {
     return (
       <TodayRecurringTasksProvider>
+        <AutoTodoistSync />
         <main className="flex min-h-dvh flex-col">
           <HeroHeader meta={data.meta} initialNow={data.now} />
           <div className="flex flex-1 items-center justify-center p-8">
@@ -72,6 +74,7 @@ npm run dev`}
 
   return (
     <TodayRecurringTasksProvider>
+      <AutoTodoistSync />
       <main className="flex min-h-dvh flex-col">
         <HeroHeader meta={data.meta} initialNow={data.now} />
         <Next3Days groups={data.next3Days} />

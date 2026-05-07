@@ -9,6 +9,7 @@ import {
   syncTodoist,
   syncTodoistTasksByIds,
 } from "@/lib/sync/todoist";
+import { reconcileTodoistCompletionResult } from "@/lib/sync/todoist-reconcile";
 import { MAX_WEBHOOK_BODY_BYTES } from "@/lib/sync/webhook-utils";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +45,8 @@ export async function POST(req: NextRequest) {
 
   try {
     if (eventName.startsWith("project:")) {
-      await syncTodoist();
+      const result = await syncTodoist();
+      await reconcileTodoistCompletionResult(result, "webhook-todoist");
       await logAudit({ source: "webhook-todoist", op: "full_sync_project", payload: { eventName } });
       return NextResponse.json({ ok: true });
     }
@@ -58,7 +60,8 @@ export async function POST(req: NextRequest) {
       }
 
       if (!id || !process.env.TODOIST_TOKEN) {
-        await syncTodoist();
+        const result = await syncTodoist();
+        await reconcileTodoistCompletionResult(result, "webhook-todoist");
         await logAudit({ source: "webhook-todoist", op: "full_sync_fallback", payload: { eventName } });
         return NextResponse.json({ ok: true });
       }
@@ -101,12 +104,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    await syncTodoist();
+    const result = await syncTodoist();
+    await reconcileTodoistCompletionResult(result, "webhook-todoist");
     await logAudit({ source: "webhook-todoist", op: "full_sync_unknown_event", payload: { eventName } });
   } catch (e) {
     await logAudit({ source: "webhook-todoist", op: "error", error: (e as Error).message });
     try {
-      await syncTodoist();
+      const result = await syncTodoist();
+      await reconcileTodoistCompletionResult(result, "webhook-todoist");
     } catch {
       /* logged */
     }

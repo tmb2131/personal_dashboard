@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { syncNotion } from "@/lib/sync/notion";
-import { syncTodoist } from "@/lib/sync/todoist";
+import { syncTodoist, type SyncTodoistResult } from "@/lib/sync/todoist";
+import { reconcileTodoistCompletionResult } from "@/lib/sync/todoist-reconcile";
 import { ensureGcalWatchesHealthy, syncGcal } from "@/lib/sync/gcal";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,13 @@ export async function POST() {
     syncTodoist(),
     accessToken ? syncGcal(async () => accessToken) : Promise.resolve({ events: 0, calendars: 0, skipped: "no-token" }),
   ]);
+  const todoistReconciliation =
+    results[1].status === "fulfilled"
+      ? await reconcileTodoistCompletionResult(
+          results[1].value as SyncTodoistResult,
+          "manual-sync-todoist",
+        )
+      : null;
   const watchHealthAfter = process.env.GOOGLE_REFRESH_TOKEN
     ? await ensureGcalWatchesHealthy()
         .then((r) => ({ ok: true as const, ...r }))
@@ -41,6 +49,7 @@ export async function POST() {
       error: anySyncSucceeded ? undefined : "All sync providers failed",
       notion: notionResult,
       todoist: todoistResult,
+      todoistReconciliation,
       gcal: gcalResult,
       gcalWatchHealthBefore: watchHealthBefore,
       gcalWatchHealthAfter: watchHealthAfter,

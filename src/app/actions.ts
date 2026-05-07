@@ -285,13 +285,9 @@ export async function createProjectSubtaskAction(args: {
     const notionProject = list.find((p) => p.name.toLowerCase() === "notion");
     const projectId = notionProject?.id ?? (await getPersonalProjectId());
 
-    const payload: Parameters<typeof api.addTask>[0] = {
-      content: args.title.trim(),
-      projectId,
-    };
-    if (args.dueDate) {
-      payload.dueDate = args.dueDate;
-    }
+    const payload: Parameters<typeof api.addTask>[0] = args.dueDate
+      ? { content: args.title.trim(), projectId, dueDate: args.dueDate }
+      : { content: args.title.trim(), projectId };
     const created = await api.addTask(payload);
     await syncTodoistTasksByIds([created.id]);
     await insertTaskLinkForPair(pageId, created.id);

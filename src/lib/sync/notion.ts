@@ -346,6 +346,23 @@ export async function updateNotionFocus(pageId: string, focus: "Yes" | "No") {
   });
 }
 
+function parseDateOnlyInput(input: string): Date {
+  const m = input.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) throw new Error("Invalid date format");
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const out = new Date(y, mo, d, 0, 0, 0, 0);
+  if (
+    out.getFullYear() !== y ||
+    out.getMonth() !== mo ||
+    out.getDate() !== d
+  ) {
+    throw new Error("Invalid date");
+  }
+  return out;
+}
+
 type DataSourceObjectResponse = {
   properties: Record<string, { type?: string; [k: string]: unknown }>;
 };
@@ -379,6 +396,66 @@ export type CreateTodoFromTodoistMirrorInput = {
   /** Todoist-side task (DB row) used for Status / priority / dates on the new Notion page. */
   task: Pick<TodoistTask, "checked" | "labels" | "priority" | "dueDate" | "deadline">;
 };
+
+export async function createNotionProjectSubtask(input: {
+  notionParentPageId: string;
+  title: string;
+  dueDate: string | null;
+}): Promise<{ pageId: string }> {
+  if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
+  if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
+  const title = input.title.trim();
+  if (!title) throw new Error("Task title is required");
+
+  const titleKey = await getTodosTitlePropertyName();
+  const properties: Record<string, unknown> = {
+    [titleKey]: {
+      title: [{ type: "text" as const, text: { content: title } }],
+    },
+    Status: { status: { name: "Not started" } },
+    "Parent task": { relation: [{ id: input.notionParentPageId }] },
+  };
+
+  if (input.dueDate) {
+    const due = parseDateOnlyInput(input.dueDate);
+    properties.Date = { date: formatNotionDateProp(due, false) };
+  }
+
+  const created = await client().pages.create({
+    parent: { type: "data_source_id", data_source_id: TODOS_DS },
+    properties: properties as never,
+  });
+
+  const pageId = created.id;
+  await syncNotionEntitiesByIds([pageId], new Map([[pageId, "todo"]]));
+  return { pageId };
+}
+
+export async function updateNotionProjectSubtask(input: {
+  notionPageId: string;
+  title: string;
+  dueDate: string | null;
+}) {
+  if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
+  const title = input.title.trim();
+  if (!title) throw new Error("Task title is required");
+
+  const titleKey = await getTodosTitlePropertyName();
+  const properties: Record<string, unknown> = {
+    [titleKey]: {
+      title: [{ type: "text" as const, text: { content: title } }],
+    },
+    Date: input.dueDate
+      ? { date: formatNotionDateProp(parseDateOnlyInput(input.dueDate), false) }
+      : { date: null },
+  };
+
+  await client().pages.update({
+    page_id: input.notionPageId,
+    properties: properties as never,
+  });
+  await syncNotionEntitiesByIds([input.notionPageId], new Map([[input.notionPageId, "todo"]]));
+}
 
 /**
  * Creates a sub-task page under the To-Dos data source with "Parent task" set.

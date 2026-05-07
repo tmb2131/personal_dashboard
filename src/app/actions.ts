@@ -8,7 +8,11 @@ import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 import { applyDashboardToggle } from "@/lib/sync/orchestrator";
 import { pushNotionPageToTodoist, pushTodoistTaskToNotion } from "@/lib/sync/cross-post";
-import { updateNotionFocus } from "@/lib/sync/notion";
+import {
+  createNotionProjectSubtask,
+  updateNotionFocus,
+  updateNotionProjectSubtask,
+} from "@/lib/sync/notion";
 import { syncTodoist } from "@/lib/sync/todoist";
 
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
@@ -224,6 +228,44 @@ export async function setTodoistTaskDueAction(args: {
     }
 
     await syncTodoist().catch(() => {});
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function createProjectSubtaskAction(args: {
+  notionParentPageId: string;
+  title: string;
+  dueDate: string | null;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionParentPageId) return { ok: false, error: "Missing project page" };
+  if (!args.title.trim()) return { ok: false, error: "Task title is required" };
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    await createNotionProjectSubtask(args);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function updateProjectSubtaskAction(args: {
+  notionPageId: string;
+  title: string;
+  dueDate: string | null;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionPageId) return { ok: false, error: "Missing task page" };
+  if (!args.title.trim()) return { ok: false, error: "Task title is required" };
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    await updateNotionProjectSubtask(args);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };

@@ -285,6 +285,7 @@ export async function createProjectSubtaskAction(args: {
   notionParentPageId: string;
   title: string;
   dueDate: string | null;
+  description?: string | null;
 }): Promise<CrossPostResult> {
   const session = await auth();
   if (!session) return { ok: false, error: "Not signed in" };
@@ -294,7 +295,11 @@ export async function createProjectSubtaskAction(args: {
   if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
 
   try {
-    const { pageId } = await createNotionProjectSubtask(args);
+    const description = args.description?.trim() ?? "";
+    const { pageId } = await createNotionProjectSubtask({
+      ...args,
+      description,
+    });
 
     const api = new TodoistApi(process.env.TODOIST_TOKEN);
     const projects = (await (api as unknown as {
@@ -304,9 +309,14 @@ export async function createProjectSubtaskAction(args: {
     const notionProject = list.find((p) => p.name.toLowerCase() === "notion");
     const projectId = notionProject?.id ?? (await getPersonalProjectId());
 
+    const basePayload = {
+      content: args.title.trim(),
+      projectId,
+      ...(description ? { description } : {}),
+    };
     const payload: Parameters<typeof api.addTask>[0] = args.dueDate
-      ? { content: args.title.trim(), projectId, dueDate: args.dueDate }
-      : { content: args.title.trim(), projectId };
+      ? { ...basePayload, dueDate: args.dueDate }
+      : basePayload;
     const created = await api.addTask(payload);
     await syncTodoistTasksByIds([created.id]);
     await insertTaskLinkForPair(pageId, created.id);
@@ -321,6 +331,7 @@ export async function updateProjectSubtaskAction(args: {
   notionPageId: string;
   title: string;
   dueDate: string | null;
+  description?: string | null;
 }): Promise<CrossPostResult> {
   const session = await auth();
   if (!session) return { ok: false, error: "Not signed in" };
@@ -329,7 +340,21 @@ export async function updateProjectSubtaskAction(args: {
   if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
 
   try {
-    await updateNotionProjectSubtask(args);
+    const description = args.description?.trim() ?? "";
+    await updateNotionProjectSubtask({
+      ...args,
+      description,
+    });
+
+    const [link] = await db
+      .select()
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
+    if (link && process.env.TODOIST_TOKEN) {
+      const api = new TodoistApi(process.env.TODOIST_TOKEN);
+      await api.updateTask(link.todoistTaskId, { description });
+      await syncTodoistTasksByIds([link.todoistTaskId]);
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };

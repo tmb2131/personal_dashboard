@@ -408,6 +408,13 @@ function formatNotionDateProp(d: Date, isDatetime: boolean): { start: string } {
   return { start: `${y}-${m}-${day}` };
 }
 
+function formatRichTextProp(text: string | null): { rich_text: { type: "text"; text: { content: string } }[] } {
+  const content = text?.trim() ?? "";
+  return {
+    rich_text: content ? [{ type: "text", text: { content } }] : [],
+  };
+}
+
 /**
  * Resolves the To-Dos data source title property key (e.g. "Task name") for pages.create.
  */
@@ -427,13 +434,14 @@ export type CreateTodoFromTodoistMirrorInput = {
   title: string;
   notionParentPageId: string;
   /** Todoist-side task (DB row) used for Status / priority / dates on the new Notion page. */
-  task: Pick<TodoistTask, "checked" | "labels" | "priority" | "dueDate" | "deadline">;
+  task: Pick<TodoistTask, "checked" | "labels" | "priority" | "dueDate" | "deadline" | "description">;
 };
 
 export async function createNotionProjectSubtask(input: {
   notionParentPageId: string;
   title: string;
   dueDate: string | null;
+  description?: string | null;
 }): Promise<{ pageId: string }> {
   if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
   if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
@@ -453,6 +461,9 @@ export async function createNotionProjectSubtask(input: {
     const due = parseDateOnlyInput(input.dueDate);
     properties.Date = { date: formatNotionDateProp(due, false) };
   }
+  if (input.description?.trim()) {
+    properties.Notes = formatRichTextProp(input.description);
+  }
 
   const created = await client().pages.create({
     parent: { type: "data_source_id", data_source_id: TODOS_DS },
@@ -468,6 +479,7 @@ export async function updateNotionProjectSubtask(input: {
   notionPageId: string;
   title: string;
   dueDate: string | null;
+  description?: string | null;
 }) {
   if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
   const title = input.title.trim();
@@ -481,6 +493,7 @@ export async function updateNotionProjectSubtask(input: {
     Date: input.dueDate
       ? { date: formatNotionDateProp(parseDateOnlyInput(input.dueDate), false) }
       : { date: null },
+    Notes: formatRichTextProp(input.description ?? null),
   };
 
   await client().pages.update({
@@ -513,7 +526,7 @@ export async function createTodoPageFromTodoistMirror(
     priority: input.task.priority,
     checked: input.task.checked,
     labels: input.task.labels ?? [],
-    description: null,
+    description: input.task.description ?? null,
     raw: {},
     updatedAt: new Date(),
   } as unknown as TodoistTask;
@@ -531,6 +544,9 @@ export async function createTodoPageFromTodoistMirror(
 
   if (priorityName) {
     properties.Priority = { select: { name: priorityName } };
+  }
+  if (input.task.description?.trim()) {
+    properties.Notes = formatRichTextProp(input.task.description);
   }
 
   const due = input.task.dueDate;

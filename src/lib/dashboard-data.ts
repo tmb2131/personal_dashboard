@@ -272,7 +272,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     return {
       key: `n:${p.id}`,
       title: p.title,
-      description: matched?.description ?? null,
+      description: p.notes ?? matched?.description ?? null,
       status: p.status,
       done: p.status === "Done" || Boolean(matched?.checked),
       date: p.dateStart ?? matched?.dueDate ?? null,

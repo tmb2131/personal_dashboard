@@ -77,6 +77,9 @@ export async function pushNotionPageToTodoist(
     content: p.title,
     projectId,
   };
+  if (p.notes?.trim()) {
+    args.description = p.notes.trim();
+  }
   if (p.dateStart) {
     if (p.dateIsDatetime) args.dueDatetime = p.dateStart.toISOString();
     else args.dueDate = toYmd(p.dateStart);

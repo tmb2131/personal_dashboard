@@ -45,10 +45,12 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
   const [expanded, setExpanded] = useState(false);
   const [taskPending, startTaskTransition] = useTransition();
   const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
   const [taskError, setTaskError] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [editingDescription, setEditingDescription] = useState("");
   const [editingDueDate, setEditingDueDate] = useState("");
 
   const days = trip.dateStart ? Math.max(0, daysUntil(trip.dateStart, now)) : null;
@@ -80,6 +82,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
       const result = await createProjectSubtaskAction({
         notionParentPageId: trip.id,
         title,
+        description: newDescription,
         dueDate: newDueDate || null,
       });
       if (!result.ok) {
@@ -87,6 +90,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
         return;
       }
       setNewTitle("");
+      setNewDescription("");
       setNewDueDate("");
       setExpanded(true);
       router.refresh();
@@ -98,6 +102,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
     const taskDue = task.date ?? task.deadline;
     setEditingTaskId(task.notionPageId);
     setEditingTitle(task.title);
+    setEditingDescription(task.description ?? "");
     setEditingDueDate(taskDue ? toDateInputValue(taskDue) : "");
     setTaskError(null);
   };
@@ -109,6 +114,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
       const result = await updateProjectSubtaskAction({
         notionPageId: editingTaskId,
         title: editingTitle.trim(),
+        description: editingDescription,
         dueDate: editingDueDate || null,
       });
       if (!result.ok) {
@@ -117,6 +123,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
       }
       setEditingTaskId(null);
       setEditingTitle("");
+      setEditingDescription("");
       setEditingDueDate("");
       router.refresh();
     });
@@ -201,6 +208,14 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
                           disabled={taskPending}
                           className="h-7 w-full rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none"
                         />
+                        <textarea
+                          value={editingDescription}
+                          onChange={(e) => setEditingDescription(e.target.value)}
+                          placeholder="Description"
+                          disabled={taskPending}
+                          rows={2}
+                          className="w-full resize-none rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
+                        />
                         <div className="flex items-center gap-1.5">
                           <input
                             type="date"
@@ -222,6 +237,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
                             onClick={() => {
                               setEditingTaskId(null);
                               setEditingTitle("");
+                              setEditingDescription("");
                               setEditingDueDate("");
                               setTaskError(null);
                             }}
@@ -233,52 +249,59 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleSubtaskDone(s)}
-                          disabled={taskPending}
-                          aria-label={s.done ? "Mark not done" : "Mark done"}
-                          className={cn(
-                            "flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full border transition",
-                            s.done
-                              ? "border-fg bg-fg text-bg"
-                              : "border-border-strong hover:border-fg-muted",
-                            taskPending && "opacity-60",
-                          )}
-                        >
-                          {s.done && (
-                            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-                              <path
-                                d="M1 4.5l2.5 2.5L8 1"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          )}
-                        </button>
-                        <span
-                          className={cn(
-                            "min-w-0 flex-1 truncate text-[12px]",
-                            s.done && "line-through text-fg-subtle",
-                          )}
-                        >
-                          {s.title}
-                        </span>
-                        <span className="shrink-0 text-[11px] text-fg-subtle">
-                          {dueLabel(s.date, s.deadline)}
-                        </span>
-                        {s.notionPageId && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => beginEdit(s)}
+                            onClick={() => toggleSubtaskDone(s)}
                             disabled={taskPending}
-                            className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
+                            aria-label={s.done ? "Mark not done" : "Mark done"}
+                            className={cn(
+                              "flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full border transition",
+                              s.done
+                                ? "border-fg bg-fg text-bg"
+                                : "border-border-strong hover:border-fg-muted",
+                              taskPending && "opacity-60",
+                            )}
                           >
-                            Edit
+                            {s.done && (
+                              <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                                <path
+                                  d="M1 4.5l2.5 2.5L8 1"
+                                  stroke="currentColor"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            )}
                           </button>
+                          <span
+                            className={cn(
+                              "min-w-0 flex-1 truncate text-[12px]",
+                              s.done && "line-through text-fg-subtle",
+                            )}
+                          >
+                            {s.title}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-fg-subtle">
+                            {dueLabel(s.date, s.deadline)}
+                          </span>
+                          {s.notionPageId && (
+                            <button
+                              type="button"
+                              onClick={() => beginEdit(s)}
+                              disabled={taskPending}
+                              className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                        {s.description && (
+                          <div className="truncate pl-6 text-[11px] text-fg-subtle">
+                            {s.description}
+                          </div>
                         )}
                       </div>
                     )}
@@ -293,6 +316,13 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               placeholder="Add sub-task title"
+              disabled={taskPending}
+              className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
+            />
+            <input
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Description"
               disabled={taskPending}
               className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
             />

@@ -103,10 +103,12 @@ function ProjectRow({ p }: { p: Project }) {
   const [taskPending, startTaskTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
   const [taskError, setTaskError] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [editingDescription, setEditingDescription] = useState("");
   const [editingDueDate, setEditingDueDate] = useState("");
 
   const isFocus = focusOverride ?? (p.focus === "Yes");
@@ -178,6 +180,7 @@ function ProjectRow({ p }: { p: Project }) {
       const result = await createProjectSubtaskAction({
         notionParentPageId: p.id,
         title,
+        description: newDescription,
         dueDate: newDueDate || null,
       });
       if (!result.ok) {
@@ -185,6 +188,7 @@ function ProjectRow({ p }: { p: Project }) {
         return;
       }
       setNewTitle("");
+      setNewDescription("");
       setNewDueDate("");
       setExpanded(true);
       router.refresh();
@@ -196,6 +200,7 @@ function ProjectRow({ p }: { p: Project }) {
     const taskDue = task.date ?? task.deadline;
     setEditingTaskId(task.notionPageId);
     setEditingTitle(task.title);
+    setEditingDescription(task.description ?? "");
     setEditingDueDate(taskDue ? toDateInputValue(taskDue) : "");
     setTaskError(null);
   };
@@ -207,6 +212,7 @@ function ProjectRow({ p }: { p: Project }) {
       const result = await updateProjectSubtaskAction({
         notionPageId: editingTaskId,
         title: editingTitle.trim(),
+        description: editingDescription,
         dueDate: editingDueDate || null,
       });
       if (!result.ok) {
@@ -215,6 +221,7 @@ function ProjectRow({ p }: { p: Project }) {
       }
       setEditingTaskId(null);
       setEditingTitle("");
+      setEditingDescription("");
       setEditingDueDate("");
       router.refresh();
     });
@@ -302,6 +309,14 @@ function ProjectRow({ p }: { p: Project }) {
                           disabled={taskPending}
                           className="h-7 w-full rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none"
                         />
+                        <textarea
+                          value={editingDescription}
+                          onChange={(e) => setEditingDescription(e.target.value)}
+                          placeholder="Description"
+                          disabled={taskPending}
+                          rows={2}
+                          className="w-full resize-none rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
+                        />
                         <div className="flex items-center gap-1.5">
                           <input
                             type="date"
@@ -323,6 +338,7 @@ function ProjectRow({ p }: { p: Project }) {
                             onClick={() => {
                               setEditingTaskId(null);
                               setEditingTitle("");
+                              setEditingDescription("");
                               setEditingDueDate("");
                               setTaskError(null);
                             }}
@@ -334,20 +350,27 @@ function ProjectRow({ p }: { p: Project }) {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <span className={cn("min-w-0 flex-1 truncate text-[12px]", s.done && "line-through text-fg-subtle")}>
-                          {s.title}
-                        </span>
-                        <span className="shrink-0 text-[11px] text-fg-subtle">{dueLabel(s.date, s.deadline)}</span>
-                        {s.notionPageId && (
-                          <button
-                            type="button"
-                            onClick={() => beginEdit(s)}
-                            disabled={taskPending}
-                            className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
-                          >
-                            Edit
-                          </button>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("min-w-0 flex-1 truncate text-[12px]", s.done && "line-through text-fg-subtle")}>
+                            {s.title}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-fg-subtle">{dueLabel(s.date, s.deadline)}</span>
+                          {s.notionPageId && (
+                            <button
+                              type="button"
+                              onClick={() => beginEdit(s)}
+                              disabled={taskPending}
+                              className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                        {s.description && (
+                          <div className="truncate pl-0 text-[11px] text-fg-subtle">
+                            {s.description}
+                          </div>
                         )}
                       </div>
                     )}
@@ -362,6 +385,13 @@ function ProjectRow({ p }: { p: Project }) {
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               placeholder="Add sub-task title"
+              disabled={taskPending}
+              className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
+            />
+            <input
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Description"
               disabled={taskPending}
               className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
             />

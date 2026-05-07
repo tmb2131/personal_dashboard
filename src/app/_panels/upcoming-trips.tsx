@@ -26,8 +26,17 @@ export function UpcomingTrips({ trips, now }: { trips: Project[]; now: Date }) {
           {trips.map((t) => {
             const days = t.dateStart ? Math.max(0, daysUntil(t.dateStart, now)) : null;
             const dur = durationDays(t.dateStart, t.dateEnd);
-            const isPlanning = t.tripStatus === "Idea" || t.tripStatus === "Planned";
-            const isBooked = t.tripStatus === "Booked";
+            const isBooked = t.status === "Done";
+            const fallbackSubtask = [...t.subtasks]
+              .filter((s) => !s.done)
+              .sort((a, b) => {
+                if (a.inProgress !== b.inProgress) return a.inProgress ? -1 : 1;
+                const at = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+                const bt = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+                if (at !== bt) return at - bt;
+                return a.title.localeCompare(b.title);
+              })[0];
+            const nextStep = t.keyNextStep ?? fallbackSubtask?.title ?? null;
             return (
               <li key={t.id} className="flex items-start gap-4 px-5 py-3">
                 <div className="w-12 shrink-0 text-right">
@@ -43,7 +52,7 @@ export function UpcomingTrips({ trips, now }: { trips: Project[]; now: Date }) {
                   <div className="flex items-baseline gap-2">
                     <span className="truncate text-[14px] font-medium">{t.title}</span>
                     {isBooked && <Pill>BOOKED</Pill>}
-                    {isPlanning && !isBooked && <Pill>PLANNING</Pill>}
+                    {!isBooked && <Pill>PLANNING</Pill>}
                   </div>
                   <div className="mt-1 flex items-baseline gap-2 text-[12px] text-fg-muted tabular-nums">
                     {t.dateStart && <span>{formatDayMonth(t.dateStart)}</span>}
@@ -55,10 +64,12 @@ export function UpcomingTrips({ trips, now }: { trips: Project[]; now: Date }) {
                     )}
                     {dur != null && <span>· {dur}d</span>}
                   </div>
-                  {t.keyNextStep && (
-                    <div className="mt-1 truncate font-serif italic text-[12px] text-fg-muted">
-                      {t.keyNextStep}
+                  {nextStep ? (
+                    <div className="mt-1 truncate text-[12px] text-fg-muted">
+                      <span className="text-fg-subtle">→</span> {nextStep}
                     </div>
+                  ) : (
+                    <div className="mt-1 text-[12px] text-fg-subtle">No next step</div>
                   )}
                 </div>
               </li>

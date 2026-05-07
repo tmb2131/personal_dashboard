@@ -22,6 +22,7 @@ export function TaskRow({
   const [pending, startTransition] = useTransition();
   const [crossPostError, setCrossPostError] = useState<string | null>(null);
   const [selectedParent, setSelectedParent] = useState("");
+  const [showNotionProjectSelector, setShowNotionProjectSelector] = useState(false);
 
   const resolvedNotionParent =
     notionProjectPicklist.find((p) => p.id === selectedParent)?.id
@@ -162,7 +163,16 @@ export function TaskRow({
             )}
             {showNotion && (
               <>
-                {notionProjectPicklist.length > 0 ? (
+                {!showNotionProjectSelector ? (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => setShowNotionProjectSelector(true)}
+                    className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition hover:border-fg-muted hover:text-fg disabled:opacity-50"
+                  >
+                    Add to Notion
+                  </button>
+                ) : notionProjectPicklist.length > 0 ? (
                   <>
                     <select
                       aria-label="Notion parent project"

@@ -31,22 +31,29 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
   });
 
   return (
-    <header className="flex items-baseline gap-6 px-8 pt-6 pb-5">
-      <div className="flex items-baseline gap-2">
-        <h1 className="text-[28px] leading-none font-medium tracking-tight">{weekday},</h1>
-        <span className="font-serif italic text-[26px] text-fg-muted">{dayMonth}</span>
+    <header className="px-4 pt-5 pb-4 sm:flex sm:items-baseline sm:gap-6 sm:px-8 sm:pt-6 sm:pb-5">
+      <div className="flex min-w-0 items-start justify-between gap-3 sm:contents">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h1 className="text-[28px] leading-none font-medium tracking-tight">{weekday},</h1>
+          <span className="whitespace-nowrap font-serif text-[26px] text-fg-muted italic">{dayMonth}</span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 pt-0.5 text-[13px] sm:hidden">
+          <ManualSyncButton variant="icon" />
+          <span className="tabular-nums text-fg-muted">{timeStr}</span>
+        </div>
       </div>
 
-      <div className="ml-2 flex items-baseline gap-3 text-[13px] text-fg-muted">
+      <div className="mt-3 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px] text-fg-muted sm:mt-0 sm:ml-2">
         <span>{pluralise(todayOpenDisplayed, "open", "open")}</span>
         <span className="text-fg-subtle">·</span>
         <span>{pluralise(meta.todayMeetingCount, "meeting", "meetings")}</span>
         {meta.nextEvent && (
           <>
             <span className="text-fg-subtle">·</span>
-            <span>
+            <span className="min-w-0 max-w-full">
               next{" "}
-              <span className="text-fg">{meta.nextEvent.summary}</span>{" "}
+              <span className="break-words text-fg">{meta.nextEvent.summary}</span>{" "}
               at{" "}
               <span className="tabular-nums text-fg">
                 {formatTimeWithSuffix(meta.nextEvent.start)}
@@ -56,7 +63,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
         )}
       </div>
 
-      <div className="ml-auto flex items-center gap-3 text-[13px]">
+      <div className="ml-auto hidden items-center gap-3 text-[13px] sm:flex">
         <ManualSyncButton variant="icon" className="mr-1" />
         <span className="tabular-nums text-fg-muted">{timeStr}</span>
         <SourcePill label="Calendar" />

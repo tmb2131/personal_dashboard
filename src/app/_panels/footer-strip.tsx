@@ -63,7 +63,7 @@ export function FooterStrip({
   return (
     <footer
       id="review-strip"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-8 py-3 pb-20 text-[11px] text-fg-subtle sm:pb-3"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 pb-20 text-[11px] text-fg-subtle sm:px-8 sm:pb-3"
     >
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>
@@ -75,7 +75,7 @@ export function FooterStrip({
       <KeyHint k="⌃⌘N" label="new task" />
       <ThemeToggle label="dark/light" onClick={toggleTheme} />
 
-      <span className="ml-auto font-serif italic text-fg-muted">{dateLabel}</span>
+      <span className="font-serif text-fg-muted italic sm:ml-auto">{dateLabel}</span>
     </footer>
   );
 }

@@ -91,10 +91,14 @@
 }
 
 html {
+  max-width: 100%;
+  overflow-x: hidden;
   font-feature-settings: "cv11", "ss01", "ss03";
 }
 
 body {
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans), Inter, system-ui, sans-serif;

@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
+import { insertTaskLinkForPair } from "@/lib/sync/orchestrator";
 import { applyDashboardToggle } from "@/lib/sync/orchestrator";
 import { pushNotionPageToTodoist, pushTodoistTaskToNotion } from "@/lib/sync/cross-post";
 import {
@@ -13,21 +14,30 @@ import {
   updateNotionFocus,
   updateNotionProjectSubtask,
 } from "@/lib/sync/notion";
-import { syncTodoist } from "@/lib/sync/todoist";
+import { getPersonalProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
 
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
 const DEFAULT_QUICK_ADD_PROJECT = "Personal";
 
 // Parses "@my-project" out of the input, returns `{ text, projectName }`.
 function extractProject(s: string): { text: string; projectName: string | null } {
+  const bracket = s.match(/(^|\s)@\{([^}]+)\}/);
+  if (bracket) {
+    const projectName = bracket[2].trim();
+    const text = s.replace(bracket[0], "").trim();
+    return { text, projectName: projectName || null };
+  }
   const m = s.match(/(^|\s)@([\w-]+)/);
   if (!m) return { text: s.trim(), projectName: null };
-  const projectName = m[2].replace(/-/g, " ");
+  const projectName = m[2].replace(/-/g, " ").trim();
   const text = s.replace(m[0], "").trim();
   return { text, projectName };
 }
 
-export async function quickAddAction(raw: string): Promise<QuickAddResult> {
+export async function quickAddAction(
+  raw: string,
+  opts?: { notionProjectPageId?: string | null; notionProjectTitle?: string | null },
+): Promise<QuickAddResult> {
   const session = await auth();
   if (!session) return { ok: false, error: "Not signed in" };
   if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
@@ -45,22 +55,38 @@ export async function quickAddAction(raw: string): Promise<QuickAddResult> {
 
   const api = new TodoistApi(process.env.TODOIST_TOKEN);
 
-  const targetProjectName = projectName ?? DEFAULT_QUICK_ADD_PROJECT;
+  const selectedNotionProjectId = opts?.notionProjectPageId?.trim() || null;
+  const selectedNotionProjectTitle = opts?.notionProjectTitle?.trim() || null;
+  const targetProjectName = selectedNotionProjectId ? "Notion" : (projectName ?? DEFAULT_QUICK_ADD_PROJECT);
   const projects = (await (api as unknown as {
     getProjects: () => Promise<{ id: string; name: string }[] | { results: { id: string; name: string }[] }>;
   }).getProjects()) as { id: string; name: string }[] | { results: { id: string; name: string }[] };
   const list = Array.isArray(projects) ? projects : projects.results;
   const match = list.find((p) => p.name.toLowerCase() === targetProjectName.toLowerCase());
-  const projectId = match?.id;
+  const projectId = selectedNotionProjectId ? (match?.id ?? (await getPersonalProjectId())) : match?.id;
 
   try {
-    const baseArgs = { content, ...(projectId ? { projectId } : {}) };
+    const projectLabel = selectedNotionProjectTitle ?? projectName ?? null;
+    const labels = projectLabel ? [projectLabel.slice(0, 60)] : undefined;
+    const baseArgs = { content, ...(projectId ? { projectId } : {}), ...(labels ? { labels } : {}) };
     const args = dueDate
       ? { ...baseArgs, dueDatetime: dueDate.toISOString() }
       : baseArgs;
     const created = await api.addTask(args as Parameters<typeof api.addTask>[0]);
 
-    await syncTodoist().catch(() => {});
+    if (selectedNotionProjectId) {
+      const { pageId } = await createNotionProjectSubtask({
+        notionParentPageId: selectedNotionProjectId,
+        title: content,
+        dueDate: dueDate
+          ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`
+          : null,
+      });
+      await syncTodoistTasksByIds([created.id]);
+      await insertTaskLinkForPair(pageId, created.id);
+    } else {
+      await syncTodoist().catch(() => {});
+    }
 
     return {
       ok: true,

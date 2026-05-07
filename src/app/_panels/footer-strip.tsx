@@ -27,6 +27,30 @@ export function FooterStrip({
     return () => clearInterval(i);
   }, []);
 
+  useEffect(() => {
+    const html = document.documentElement;
+    const stored = window.localStorage.getItem("dashboard-theme");
+    if (stored === "dark" || stored === "light") {
+      html.classList.toggle("theme-dark", stored === "dark");
+      html.classList.toggle("theme-light", stored === "light");
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        const isDark = html.classList.contains("theme-dark");
+        const next = isDark ? "light" : "dark";
+        html.classList.toggle("theme-dark", next === "dark");
+        html.classList.toggle("theme-light", next === "light");
+        window.localStorage.setItem("dashboard-theme", next);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const dateLabel = now.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
@@ -42,9 +66,8 @@ export function FooterStrip({
         <ManualSyncButton size="sm" />
       </span>
       <span>·</span>
-      <KeyHint k="⌘K" label="jump" />
-      <KeyHint k="N" label="new task" />
-      <KeyHint k="D" label="dark" />
+      <KeyHint k="⇧N" label="new task" />
+      <KeyHint k="⇧D" label="dark/light" />
 
       <span className="ml-auto font-serif italic text-fg-muted">{dateLabel}</span>
     </footer>

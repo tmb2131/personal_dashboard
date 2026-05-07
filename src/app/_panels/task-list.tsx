@@ -74,7 +74,7 @@ export function TaskList({
         </ul>
       )}
 
-      <AddTaskRow />
+      <AddTaskRow notionProjectPicklist={notionProjectPicklist} />
     </section>
   );
 }

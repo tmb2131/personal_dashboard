@@ -42,6 +42,36 @@
   }
 }
 
+:root.theme-dark {
+  --bg: #1a1814;
+  --bg-elevated: #252220;
+  --fg: #ece7dc;
+  --fg-muted: #a09a8e;
+  --fg-subtle: #6b6559;
+  --border: #332f28;
+  --border-strong: #4a463d;
+  --accent: #8a99ff;
+  --accent-soft: #1e1f3a;
+  --done: #4ade80;
+  --pill-bg: #3a352a;
+  --pill-fg: #b8ad95;
+}
+
+:root.theme-light {
+  --bg: #f5f1e8;
+  --bg-elevated: #faf7ef;
+  --fg: #2a2620;
+  --fg-muted: #7a7468;
+  --fg-subtle: #a8a193;
+  --border: #e6dfcf;
+  --border-strong: #d4ccb8;
+  --accent: #5b6cff;
+  --accent-soft: #e7e9ff;
+  --done: #16a34a;
+  --pill-bg: #ece4cf;
+  --pill-fg: #6f6750;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-bg-elevated: var(--bg-elevated);

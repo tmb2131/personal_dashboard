@@ -416,12 +416,14 @@ export async function setTodoistTaskDueAction(args: {
     });
     const todoistTaskId = requestedTodoistTaskId ?? link?.todoistTaskId ?? null;
     const notionPageId = requestedNotionPageId ?? link?.notionPageId ?? null;
+    const todoistToken = process.env.TODOIST_TOKEN;
+    const notionToken = process.env.NOTION_TOKEN;
 
     if (!todoistTaskId && !notionPageId) return { ok: false, error: "Missing task" };
-    if (todoistTaskId && !process.env.TODOIST_TOKEN) {
+    if (todoistTaskId && !todoistToken) {
       return { ok: false, error: "TODOIST_TOKEN missing" };
     }
-    if (notionPageId && !process.env.NOTION_TOKEN) {
+    if (notionPageId && !notionToken) {
       return { ok: false, error: "NOTION_TOKEN missing" };
     }
 
@@ -437,7 +439,7 @@ export async function setTodoistTaskDueAction(args: {
 
     if (todoistTaskId) {
       await updateTodoistTaskDueViaRest({
-        token: process.env.TODOIST_TOKEN,
+        token: todoistToken!,
         taskId: todoistTaskId,
         payload: due.todoistPayload,
       });
@@ -561,7 +563,8 @@ export async function updateProjectSubtaskAction(args: {
       .select()
       .from(schema.taskLinks)
       .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
-    if (link && !process.env.TODOIST_TOKEN) {
+    const todoistToken = process.env.TODOIST_TOKEN;
+    if (link && !todoistToken) {
       return { ok: false, error: "TODOIST_TOKEN missing" };
     }
 
@@ -570,8 +573,8 @@ export async function updateProjectSubtaskAction(args: {
       description,
     });
 
-    if (link && process.env.TODOIST_TOKEN) {
-      const api = new TodoistApi(process.env.TODOIST_TOKEN);
+    if (link && todoistToken) {
+      const api = new TodoistApi(todoistToken);
       pendingLinkId = link.id;
       await db
         .update(schema.taskLinks)
@@ -579,7 +582,7 @@ export async function updateProjectSubtaskAction(args: {
         .where(eq(schema.taskLinks.id, link.id));
       await api.updateTask(link.todoistTaskId, { content: args.title.trim(), description });
       await updateTodoistTaskDueViaRest({
-        token: process.env.TODOIST_TOKEN,
+        token: todoistToken,
         taskId: link.todoistTaskId,
         payload: due.todoistPayload,
       });

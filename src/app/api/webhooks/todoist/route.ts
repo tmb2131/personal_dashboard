@@ -73,27 +73,30 @@ export async function POST(req: NextRequest) {
         assumedCompletedIds: completed ? new Set([id]) : undefined,
       });
 
-      let mirrorId = id;
-      if (completed && before?.dueIsRecurring) {
-        const rep = await repairRecurringTodoistLink(id);
-        if (rep.repaired && rep.newTodoistTaskId) mirrorId = rep.newTodoistTaskId;
-      }
-
       try {
-        await mirrorNotionFromTodoist(mirrorId);
+        // Mirror completion against the original task id first. For recurring tasks, repairing the
+        // link before mirroring points to the new open instance and prevents the completed status
+        // from propagating to the app.
+        await mirrorNotionFromTodoist(id);
       } catch (e) {
         await logAudit({
           source: "webhook-todoist",
           op: "mirror_error",
-          payload: { id: mirrorId, eventName },
+          payload: { id, eventName },
           error: (e as Error).message,
         });
+      }
+
+      let repairedTodoistTaskId: string | undefined;
+      if (completed && before?.dueIsRecurring) {
+        const rep = await repairRecurringTodoistLink(id);
+        if (rep.repaired) repairedTodoistTaskId = rep.newTodoistTaskId;
       }
 
       await logAudit({
         source: "webhook-todoist",
         op: "incremental",
-        payload: { eventName, id, mirrorId },
+        payload: { eventName, id, repairedTodoistTaskId },
       });
       return NextResponse.json({ ok: true });
     }

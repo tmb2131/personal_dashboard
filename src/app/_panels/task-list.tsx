@@ -18,14 +18,13 @@ export function TaskList({
 }) {
   const { showRecurringTodayTasks, setShowRecurringTodayTasks } = useTodayRecurringTasksVisibility();
 
-  const visibleTasks = useMemo(
-    () => (showRecurringTodayTasks ? tasks : tasks.filter((t) => !t.hasRecurringTag)),
-    [tasks, showRecurringTodayTasks],
-  );
+  const visibleTasks = useMemo(() => {
+    const recurringFiltered = showRecurringTodayTasks ? tasks : tasks.filter((t) => !t.hasRecurringTag);
+    return recurringFiltered.filter((t) => !t.done);
+  }, [tasks, showRecurringTodayTasks]);
 
-  const doneVisible = visibleTasks.filter((t) => t.done).length;
   const total = visibleTasks.length;
-  const ratio = total > 0 ? `${doneVisible}/${total}` : "0";
+  const ratio = total.toString();
   const isEmpty = total === 0;
 
   return (
@@ -65,7 +64,7 @@ export function TaskList({
         <div className="px-5 pb-2 text-[12px] text-fg-subtle">
           {tasks.length === 0
             ? "Nothing due. Quiet day."
-            : "Every task today matches the recurring label. Turn on the switch to show the full list."}
+            : "No open tasks in this view. Toggle recurring tasks to check if any are hidden, or you're all caught up."}
         </div>
       ) : (
         <ul>

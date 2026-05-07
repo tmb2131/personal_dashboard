@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isEditableTarget } from "@/lib/utils";
 import { ManualSyncButton } from "./manual-sync-button";
+
+type Theme = "dark" | "light";
 
 function relativeAgo(d: Date | null, now: Date): string {
   if (!d) return "never";
@@ -13,6 +14,24 @@ function relativeAgo(d: Date | null, now: Date): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function applyTheme(theme: Theme) {
+  const html = document.documentElement;
+  html.classList.toggle("theme-dark", theme === "dark");
+  html.classList.toggle("theme-light", theme === "light");
+  window.localStorage.setItem("dashboard-theme", theme);
+}
+
+function currentTheme(): Theme {
+  const html = document.documentElement;
+  if (html.classList.contains("theme-dark")) return "dark";
+  if (html.classList.contains("theme-light")) return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function toggleTheme() {
+  applyTheme(currentTheme() === "dark" ? "light" : "dark");
 }
 
 export function FooterStrip({
@@ -29,28 +48,10 @@ export function FooterStrip({
   }, []);
 
   useEffect(() => {
-    const html = document.documentElement;
     const stored = window.localStorage.getItem("dashboard-theme");
     if (stored === "dark" || stored === "light") {
-      html.classList.toggle("theme-dark", stored === "dark");
-      html.classList.toggle("theme-light", stored === "light");
+      applyTheme(stored);
     }
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
-      if (isEditableTarget(e.target)) return;
-      if (e.ctrlKey && e.metaKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "d") {
-        e.preventDefault();
-        const isDark = html.classList.contains("theme-dark");
-        const next = isDark ? "light" : "dark";
-        html.classList.toggle("theme-dark", next === "dark");
-        html.classList.toggle("theme-light", next === "light");
-        window.localStorage.setItem("dashboard-theme", next);
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   const dateLabel = now.toLocaleDateString("en-GB", {
@@ -69,10 +70,22 @@ export function FooterStrip({
       </span>
       <span>·</span>
       <KeyHint k="⌃⌘N" label="new task" />
-      <KeyHint k="⌃⌘D" label="dark/light" />
+      <ThemeToggle label="dark/light" onClick={toggleTheme} />
 
       <span className="ml-auto font-serif italic text-fg-muted">{dateLabel}</span>
     </footer>
+  );
+}
+
+function ThemeToggle({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-sm text-fg-subtle hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+    >
+      {label}
+    </button>
   );
 }
 

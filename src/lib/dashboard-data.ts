@@ -36,6 +36,7 @@ export type Project = {
   id: string;
   title: string;
   status: NotionPage["status"] | null;
+  focus: NotionPage["focus"] | null;
   tripStatus: NotionPage["tripStatus"] | null;
   isLifeArea: boolean;
   categoryId: string | null;
@@ -53,9 +54,7 @@ export type Project = {
 };
 
 export type ProjectGroups = {
-  active: Project[];
-  onHold: Project[];
-  someday: Project[];
+  focus: Project[];
   all: Project[];
 };
 
@@ -111,6 +110,12 @@ function sameDay(a: Date, b: Date) {
   );
 }
 
+function normalizedTitle(title: string | null | undefined): string | null {
+  const v = (title ?? "").trim();
+  if (!v || v === "0" || v === "(untitled)") return null;
+  return v;
+}
+
 export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const todayStart = startOfDay(now);
   const horizon = endOfDay(addDays(now, 2));
@@ -139,10 +144,10 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const linkByTodoist = new Map(links.map((l) => [l.todoistTaskId, l]));
   const pageById = new Map(pages.map((p) => [p.id, p]));
 
-  // Subtask = a Notion page with parentId set (a task under a project)
-  // Project = a Notion page with parentId null (a top-level to-do)
-  const projectPages = pages.filter((p) => !p.parentId);
-  const subtaskPages = pages.filter((p) => Boolean(p.parentId));
+  // Project = top-level "Task name" row (no parent task)
+  // Subtask = row linked via "Parent task" (sub-item)
+  const projectPages = pages.filter((p) => !p.ignore && !p.parentId);
+  const subtaskPages = pages.filter((p) => !p.ignore && Boolean(p.parentId));
 
   const subtasksByParent = new Map<string, Subtask[]>();
 
@@ -188,13 +193,20 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     const subs = subtasksByParent.get(p.id) ?? [];
     const doneSubtasks = subs.filter((s) => s.done).length;
     const cat = p.categoryId ? categoryById.get(p.categoryId) : undefined;
+    const parentTitle = p.parentId ? pageById.get(p.parentId)?.title : null;
+    const resolvedTitle =
+      normalizedTitle(p.title) ??
+      normalizedTitle(parentTitle) ??
+      normalizedTitle(cat?.title) ??
+      p.title;
     const days = p.updatedAt
       ? Math.max(0, Math.floor((now.getTime() - p.updatedAt.getTime()) / 86_400_000))
       : null;
     return {
       id: p.id,
-      title: p.title,
+      title: resolvedTitle,
       status: p.status,
+      focus: p.focus,
       tripStatus: p.tripStatus,
       isLifeArea: p.focus === "Life Area",
       categoryId: p.categoryId,
@@ -265,15 +277,14 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   }));
 
   // ----- Project groups
-  const isTrip = (p: Project) =>
-    Boolean(p.tripStatus && p.tripStatus !== "Deprioritized") ||
-    /travel/i.test(p.categoryTitle ?? "");
+  const isTrip = (p: Project) => /travel/i.test(p.categoryTitle ?? "");
   const isLifeArea = (p: Project) => p.isLifeArea;
 
-  const nonTripNonArea = allProjects.filter((p) => !isTrip(p) && !isLifeArea(p));
-
-  const active = nonTripNonArea
-    .filter((p) => p.status !== "Done" && p.openSubtasks > 0)
+  const nonTripNonArea = allProjects.filter(
+    (p) => !isTrip(p) && !isLifeArea(p) && p.status !== "Done",
+  );
+  const focus = nonTripNonArea
+    .filter((p) => p.focus === "Yes")
     .sort((a, b) => {
       const ad = a.daysSinceUpdate ?? 999;
       const bd = b.daysSinceUpdate ?? 999;
@@ -281,15 +292,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       return b.openSubtasks - a.openSubtasks;
     });
 
-  const onHold = nonTripNonArea.filter((p) => p.status === "Not started" && p.openSubtasks === 0);
-  const someday = nonTripNonArea.filter(
-    (p) => p.status !== "Done" && p.openSubtasks === 0 && !p.dateStart && !p.deadline,
-  );
-
   const projects: ProjectGroups = {
-    active,
-    onHold,
-    someday,
+    focus,
     all: nonTripNonArea,
   };
 

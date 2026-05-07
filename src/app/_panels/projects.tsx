@@ -1,5 +1,8 @@
+"use client";
+
 import { categoryDot, cn, shortCategoryLabel } from "@/lib/utils";
 import type { Project, ProjectGroups } from "@/lib/dashboard-data";
+import { useState } from "react";
 import { SectionHeader } from "./section-header";
 
 function ProgressBar({ done, total }: { done: number; total: number }) {
@@ -14,6 +17,16 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
 function ProjectRow({ p }: { p: Project }) {
   const dot = categoryDot(p.categoryTitle);
   const cat = shortCategoryLabel(p.categoryTitle);
+  const fallbackSubtask = [...p.subtasks]
+    .filter((s) => !s.done)
+    .sort((a, b) => {
+      if (a.inProgress !== b.inProgress) return a.inProgress ? -1 : 1;
+      const at = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const bt = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      if (at !== bt) return at - bt;
+      return a.title.localeCompare(b.title);
+    })[0];
+  const nextStep = p.keyNextStep ?? fallbackSubtask?.title ?? null;
   return (
     <li className="px-5 py-2.5">
       <div className="flex items-center gap-2.5">
@@ -37,9 +50,9 @@ function ProjectRow({ p }: { p: Project }) {
         </span>
       </div>
       <div className="mt-1.5 ml-[18px] flex items-center gap-3">
-        {p.keyNextStep ? (
+        {nextStep ? (
           <span className="truncate text-[12px] text-fg-muted">
-            <span className="text-fg-subtle">→</span> {p.keyNextStep}
+            <span className="text-fg-subtle">→</span> {nextStep}
           </span>
         ) : (
           <span className="text-[12px] text-fg-subtle">No next step</span>
@@ -78,22 +91,38 @@ function Tab({
 }
 
 export function Projects({ groups }: { groups: ProjectGroups }) {
+  const [view, setView] = useState<"focus" | "all">("focus");
+  const list = view === "focus" ? groups.focus : groups.all;
   return (
     <section className="border-t border-border">
       <SectionHeader eyebrow="Projects" title="" count={groups.all.length} source="notion" />
 
       <div className="flex items-center gap-1 px-5 pb-2">
-        <Tab label="Active" count={groups.active.length} active />
-        <Tab label="On hold" count={groups.onHold.length} />
-        <Tab label="Someday" count={groups.someday.length} />
-        <Tab label="All" count={groups.all.length} />
+        <button
+          onClick={() => setView("focus")}
+          type="button"
+          aria-pressed={view === "focus"}
+          className="rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted/40"
+        >
+          <Tab label="Focus" count={groups.focus.length} active={view === "focus"} />
+        </button>
+        <button
+          onClick={() => setView("all")}
+          type="button"
+          aria-pressed={view === "all"}
+          className="rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fg-muted/40"
+        >
+          <Tab label="All" count={groups.all.length} active={view === "all"} />
+        </button>
       </div>
 
-      {groups.active.length === 0 ? (
-        <div className="px-5 pb-5 text-[12px] text-fg-subtle">No active projects</div>
+      {list.length === 0 ? (
+        <div className="px-5 pb-5 text-[12px] text-fg-subtle">
+          {view === "focus" ? "No focused projects" : "No projects"}
+        </div>
       ) : (
         <ul>
-          {groups.active.slice(0, 8).map((p) => (
+          {list.slice(0, 8).map((p) => (
             <ProjectRow key={p.id} p={p} />
           ))}
         </ul>

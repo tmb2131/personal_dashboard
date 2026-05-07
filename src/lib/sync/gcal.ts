@@ -2,6 +2,7 @@ import { google, type calendar_v3 } from "googleapis";
 import { eq, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, schema } from "@/lib/db";
+import { parseDateOnlyLocal } from "@/lib/date-utils";
 import { logAudit } from "@/lib/sync/audit";
 
 export type AccessTokenSource = () => Promise<string | undefined>;
@@ -68,12 +69,7 @@ function windowRange(now: Date) {
 }
 
 function parseAllDayDateLocal(value: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
-  if (!m) return null;
-  const year = Number(m[1]);
-  const monthIndex = Number(m[2]) - 1;
-  const day = Number(m[3]);
-  return new Date(year, monthIndex, day, 0, 0, 0, 0);
+  return parseDateOnlyLocal(value);
 }
 
 function eventToRow(

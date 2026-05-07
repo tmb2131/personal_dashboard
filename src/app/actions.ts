@@ -4,17 +4,26 @@ import * as chrono from "chrono-node";
 import { TodoistApi } from "@doist/todoist-api-typescript";
 import { and, eq, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
+import {
+  formatDateOnlyLocal,
+  parseDateOnlyLocalStrict,
+  parseDateTimeLocal,
+} from "@/lib/date-utils";
 import { db, schema } from "@/lib/db";
 import { extractProject } from "@/lib/quick-add";
 import { logAudit } from "@/lib/sync/audit";
-import { insertTaskLinkForPair } from "@/lib/sync/orchestrator";
-import { applyDashboardToggle } from "@/lib/sync/orchestrator";
+import {
+  applyDashboardToggle,
+  insertTaskLinkForPair,
+  refreshTaskLinkHash,
+} from "@/lib/sync/orchestrator";
 import { pushNotionPageToTodoist, pushTodoistTaskToNotion } from "@/lib/sync/cross-post";
 import {
   createNotionProject,
   createNotionProjectSubtask,
   updateNotionFocus,
   updateNotionProjectSubtask,
+  updateNotionTaskDate,
   updateNotionTodoStatus,
 } from "@/lib/sync/notion";
 import { getPersonalProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
@@ -50,9 +59,7 @@ export async function quickAddAction(
   const parsed = chrono.parse(text, new Date(), { forwardDate: true })[0];
   const dueDate = parsed?.start.date() ?? null;
   const dueHasTime = parsed?.start.isCertain("hour") === true;
-  const dueDateOnly = dueDate
-    ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`
-    : null;
+  const dueDateOnly = dueDate ? formatDateOnlyLocal(dueDate) : null;
   const content = parsed
     ? (text.slice(0, parsed.index) + text.slice(parsed.index + parsed.text.length)).replace(/\s+/g, " ").trim()
     : text;
@@ -184,6 +191,122 @@ async function updateTodoistTaskDueViaRest(args: {
   throw new Error(lastError);
 }
 
+type DueInput = {
+  dueDate: string | null;
+  dueTime: string | null;
+  dueAt: Date | null;
+  todoistPayload: { due_date?: string; due_datetime?: string; due_string?: string };
+};
+
+function parseDueInput(dueDateInput: string | null, dueTimeInput?: string | null): DueInput {
+  const dueDate = dueDateInput?.trim() || null;
+  const dueTime = dueTimeInput?.trim() || null;
+
+  if (!dueDate) {
+    if (dueTime) throw new Error("Choose a date before setting a time");
+    return {
+      dueDate: null,
+      dueTime: null,
+      dueAt: null,
+      todoistPayload: { due_string: "no date" },
+    };
+  }
+
+  if (dueTime) {
+    const dueAt = parseDateTimeLocal(dueDate, dueTime);
+    if (!dueAt) throw new Error("Invalid date/time");
+    return {
+      dueDate,
+      dueTime,
+      dueAt,
+      todoistPayload: { due_datetime: dueAt.toISOString() },
+    };
+  }
+
+  const dueAt = parseDateOnlyLocalStrict(dueDate);
+  return {
+    dueDate,
+    dueTime: null,
+    dueAt,
+    todoistPayload: { due_date: dueDate },
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : {};
+}
+
+async function patchTodoistDueCache(taskId: string, due: DueInput) {
+  const [task] = await db
+    .select({ raw: schema.todoistTasks.raw })
+    .from(schema.todoistTasks)
+    .where(eq(schema.todoistTasks.id, taskId));
+  const raw = asRecord(task?.raw);
+  const existingDue = asRecord(raw.due);
+
+  if (due.dueDate) {
+    const nextDue: Record<string, unknown> = {
+      ...existingDue,
+      date: due.dueDate,
+      string: due.dueDate,
+    };
+    if (typeof existingDue.isRecurring === "boolean") nextDue.isRecurring = existingDue.isRecurring;
+    if (due.dueTime && due.dueAt) {
+      nextDue.datetime = due.dueAt.toISOString();
+    } else {
+      delete nextDue.datetime;
+    }
+    raw.due = nextDue;
+  } else {
+    raw.due = null;
+  }
+
+  await db
+    .update(schema.todoistTasks)
+    .set({
+      dueDate: due.dueAt,
+      dueString: due.dueDate,
+      raw,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.todoistTasks.id, taskId));
+}
+
+async function patchNotionDueCache(pageId: string, due: DueInput) {
+  await db
+    .update(schema.notionPages)
+    .set({
+      dateStart: due.dueAt,
+      dateEnd: null,
+      dateIsDatetime: Boolean(due.dueTime),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.notionPages.id, pageId));
+}
+
+async function resolveDueTaskLink(args: {
+  notionPageId?: string | null;
+  todoistTaskId?: string | null;
+}) {
+  if (args.notionPageId) {
+    const [link] = await db
+      .select()
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
+    if (link) return link;
+  }
+  if (args.todoistTaskId) {
+    const [link] = await db
+      .select()
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.todoistTaskId, args.todoistTaskId));
+    if (link) return link;
+  }
+  return null;
+}
+
 export async function pushNotionTaskToTodoistAction(notionPageId: string): Promise<CrossPostResult> {
   const session = await auth();
   if (!session) return { ok: false, error: "Not signed in" };
@@ -275,42 +398,82 @@ export async function setProjectFocusAction(args: {
 }
 
 export async function setTodoistTaskDueAction(args: {
-  todoistTaskId: string;
+  todoistTaskId?: string | null;
+  notionPageId?: string | null;
   dueDate: string | null;
   dueTime?: string | null;
 }): Promise<CrossPostResult> {
   const session = await auth();
   if (!session) return { ok: false, error: "Not signed in" };
-  if (!args.todoistTaskId) return { ok: false, error: "Missing Todoist task" };
-  if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
+  let pendingLinkId: string | null = null;
 
   try {
-    if (args.dueDate == null) {
-      await updateTodoistTaskDueViaRest({
-        token: process.env.TODOIST_TOKEN,
-        taskId: args.todoistTaskId,
-        payload: { due_string: "no date" },
-      });
-    } else if (args.dueTime) {
-      const parsed = new Date(`${args.dueDate}T${args.dueTime}`);
-      if (Number.isNaN(parsed.getTime())) return { ok: false, error: "Invalid date/time" };
-      await updateTodoistTaskDueViaRest({
-        token: process.env.TODOIST_TOKEN,
-        taskId: args.todoistTaskId,
-        payload: { due_datetime: parsed.toISOString() },
-      });
-    } else {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(args.dueDate)) return { ok: false, error: "Invalid date" };
-      await updateTodoistTaskDueViaRest({
-        token: process.env.TODOIST_TOKEN,
-        taskId: args.todoistTaskId,
-        payload: { due_date: args.dueDate },
-      });
+    const requestedTodoistTaskId = args.todoistTaskId?.trim() || null;
+    const requestedNotionPageId = args.notionPageId?.trim() || null;
+    const link = await resolveDueTaskLink({
+      todoistTaskId: requestedTodoistTaskId,
+      notionPageId: requestedNotionPageId,
+    });
+    const todoistTaskId = requestedTodoistTaskId ?? link?.todoistTaskId ?? null;
+    const notionPageId = requestedNotionPageId ?? link?.notionPageId ?? null;
+    const todoistToken = process.env.TODOIST_TOKEN;
+    const notionToken = process.env.NOTION_TOKEN;
+
+    if (!todoistTaskId && !notionPageId) return { ok: false, error: "Missing task" };
+    if (todoistTaskId && !todoistToken) {
+      return { ok: false, error: "TODOIST_TOKEN missing" };
+    }
+    if (notionPageId && !notionToken) {
+      return { ok: false, error: "NOTION_TOKEN missing" };
     }
 
-    await syncTodoist().catch(() => {});
+    const due = parseDueInput(args.dueDate, args.dueTime ?? null);
+
+    if (link) {
+      pendingLinkId = link.id;
+      await db
+        .update(schema.taskLinks)
+        .set({ pendingOrigin: "dashboard" })
+        .where(eq(schema.taskLinks.id, link.id));
+    }
+
+    if (todoistTaskId) {
+      await updateTodoistTaskDueViaRest({
+        token: todoistToken!,
+        taskId: todoistTaskId,
+        payload: due.todoistPayload,
+      });
+      await syncTodoistTasksByIds([todoistTaskId]).catch(() => {});
+      await patchTodoistDueCache(todoistTaskId, due);
+    }
+    if (notionPageId) {
+      await updateNotionTaskDate(
+        notionPageId,
+        due.dueDate ? { dueDate: due.dueDate, dueTime: due.dueTime } : null,
+      );
+      await patchNotionDueCache(notionPageId, due);
+    }
+
+    if (link) await refreshTaskLinkHash(link.id);
+    await logAudit({
+      source: "dashboard",
+      op: "set_task_due",
+      payload: { todoistTaskId, notionPageId, dueDate: due.dueDate, dueTime: due.dueTime },
+    });
     return { ok: true };
   } catch (e) {
+    if (pendingLinkId) {
+      await db
+        .update(schema.taskLinks)
+        .set({ pendingOrigin: null })
+        .where(eq(schema.taskLinks.id, pendingLinkId));
+    }
+    await logAudit({
+      source: "dashboard",
+      op: "set_task_due_error",
+      payload: args,
+      error: (e as Error).message,
+    });
     return { ok: false, error: (e as Error).message };
   }
 }
@@ -391,25 +554,50 @@ export async function updateProjectSubtaskAction(args: {
   if (!args.notionPageId) return { ok: false, error: "Missing task page" };
   if (!args.title.trim()) return { ok: false, error: "Task title is required" };
   if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+  let pendingLinkId: string | null = null;
 
   try {
     const description = args.description?.trim() ?? "";
+    const due = parseDueInput(args.dueDate, null);
+    const [link] = await db
+      .select()
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
+    const todoistToken = process.env.TODOIST_TOKEN;
+    if (link && !todoistToken) {
+      return { ok: false, error: "TODOIST_TOKEN missing" };
+    }
+
     await updateNotionProjectSubtask({
       ...args,
       description,
     });
 
-    const [link] = await db
-      .select()
-      .from(schema.taskLinks)
-      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
-    if (link && process.env.TODOIST_TOKEN) {
-      const api = new TodoistApi(process.env.TODOIST_TOKEN);
-      await api.updateTask(link.todoistTaskId, { description });
-      await syncTodoistTasksByIds([link.todoistTaskId]);
+    if (link && todoistToken) {
+      const api = new TodoistApi(todoistToken);
+      pendingLinkId = link.id;
+      await db
+        .update(schema.taskLinks)
+        .set({ pendingOrigin: "dashboard" })
+        .where(eq(schema.taskLinks.id, link.id));
+      await api.updateTask(link.todoistTaskId, { content: args.title.trim(), description });
+      await updateTodoistTaskDueViaRest({
+        token: todoistToken,
+        taskId: link.todoistTaskId,
+        payload: due.todoistPayload,
+      });
+      await syncTodoistTasksByIds([link.todoistTaskId]).catch(() => {});
+      await patchTodoistDueCache(link.todoistTaskId, due);
+      await refreshTaskLinkHash(link.id);
     }
     return { ok: true };
   } catch (e) {
+    if (pendingLinkId) {
+      await db
+        .update(schema.taskLinks)
+        .set({ pendingOrigin: null })
+        .where(eq(schema.taskLinks.id, pendingLinkId));
+    }
     return { ok: false, error: (e as Error).message };
   }
 }

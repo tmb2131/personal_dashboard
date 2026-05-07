@@ -4,14 +4,35 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { categoryDot, cn } from "@/lib/utils";
 import type { Subtask } from "@/lib/dashboard-data";
-import { toggleTaskDoneAction } from "../actions";
+import {
+  pushNotionTaskToTodoistAction,
+  pushTodoistTaskToNotionAction,
+  toggleTaskDoneAction,
+} from "../actions";
 
-export function TaskRow({ t }: { t: Subtask }) {
+export function TaskRow({
+  t,
+  notionProjectPicklist,
+}: {
+  t: Subtask;
+  notionProjectPicklist: { id: string; title: string }[];
+}) {
   const router = useRouter();
   const [done, setDone] = useState(t.done);
   const [pending, startTransition] = useTransition();
+  const [crossPostError, setCrossPostError] = useState<string | null>(null);
+  const [selectedParent, setSelectedParent] = useState("");
+
+  const resolvedNotionParent =
+    notionProjectPicklist.find((p) => p.id === selectedParent)?.id
+    ?? notionProjectPicklist[0]?.id
+    ?? "";
+
   const dotColor = categoryDot(t.categoryTitle);
   const canToggle = Boolean(t.notionPageId || t.todoistTaskId);
+
+  const showTodoist = t.source === "notion" && Boolean(t.notionPageId) && !t.todoistTaskId;
+  const showNotion = t.source === "todoist" && Boolean(t.todoistTaskId) && !t.notionPageId;
 
   const handleClick = () => {
     if (!canToggle) return;
@@ -25,6 +46,37 @@ export function TaskRow({ t }: { t: Subtask }) {
       });
       if (!result.ok) {
         setDone(!next);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const handlePushTodoist = () => {
+    const id = t.notionPageId;
+    if (!id) return;
+    setCrossPostError(null);
+    startTransition(async () => {
+      const result = await pushNotionTaskToTodoistAction(id);
+      if (!result.ok) {
+        setCrossPostError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const handlePushNotion = () => {
+    const taskId = t.todoistTaskId;
+    if (!taskId || !resolvedNotionParent) return;
+    setCrossPostError(null);
+    startTransition(async () => {
+      const result = await pushTodoistTaskToNotionAction({
+        todoistTaskId: taskId,
+        notionParentPageId: resolvedNotionParent,
+      });
+      if (!result.ok) {
+        setCrossPostError(result.error);
         return;
       }
       router.refresh();
@@ -92,6 +144,57 @@ export function TaskRow({ t }: { t: Subtask }) {
                 />
                 <span className="truncate">{t.projectTitle}</span>
               </span>
+            )}
+          </div>
+        )}
+
+        {(showTodoist || showNotion) && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            {showTodoist && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={handlePushTodoist}
+                className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition hover:border-fg-muted hover:text-fg disabled:opacity-50"
+              >
+                Add to Todoist
+              </button>
+            )}
+            {showNotion && (
+              <>
+                {notionProjectPicklist.length > 0 ? (
+                  <>
+                    <select
+                      aria-label="Notion parent project"
+                      value={resolvedNotionParent}
+                      onChange={(e) => setSelectedParent(e.target.value)}
+                      disabled={pending}
+                      className="max-w-[10rem] rounded border border-border bg-bg py-0.5 pr-6 pl-1.5 text-[11px] text-fg-muted"
+                    >
+                      {notionProjectPicklist.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={pending || !resolvedNotionParent}
+                      onClick={handlePushNotion}
+                      className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition hover:border-fg-muted hover:text-fg disabled:opacity-50"
+                    >
+                      Add to Notion
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-fg-subtle">
+                    No Notion projects — create a top-level task in Notion first.
+                  </span>
+                )}
+              </>
+            )}
+            {crossPostError && (
+              <span className="text-[11px] text-red-500/90">{crossPostError}</span>
             )}
           </div>
         )}

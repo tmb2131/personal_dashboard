@@ -71,6 +71,28 @@ export async function refreshTaskLinkHash(linkId: string) {
     .where(eq(schema.taskLinks.id, linkId));
 }
 
+/** Insert one `task_links` row after both sides exist in the DB (e.g. cross-post create). */
+export async function insertTaskLinkForPair(
+  notionPageId: string,
+  todoistTaskId: string,
+): Promise<{ linkId: string }> {
+  const [page] = await db.select().from(schema.notionPages).where(eq(schema.notionPages.id, notionPageId));
+  const [task] = await db.select().from(schema.todoistTasks).where(eq(schema.todoistTasks.id, todoistTaskId));
+  if (!page || !task) throw new Error("Missing Notion page or Todoist task for link");
+  const h = hashForPair(page as NotionPage, task as TodoistTask);
+  const linkId = crypto.randomUUID();
+  await db.insert(schema.taskLinks).values({
+    id: linkId,
+    notionPageId,
+    todoistTaskId,
+    lastSyncHash: h,
+    lastSyncAt: new Date(),
+    pendingOrigin: "dashboard",
+  });
+  await refreshTaskLinkHash(linkId);
+  return { linkId };
+}
+
 /** After Notion is authoritative in DB: sync Todoist completion + labels. */
 export async function mirrorTodoistFromNotion(notionPageId: string): Promise<void> {
   const [link] = await db

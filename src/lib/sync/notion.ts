@@ -1,6 +1,7 @@
 import { Client } from "@notionhq/client";
 import { db, schema } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { notionStatusFromTodoist, PRIORITY_TODOIST_TO_NOTION, type TodoistTask } from "@/lib/sync/mappings";
 
 const TODOS_DS = process.env.NOTION_TODOS_DATA_SOURCE_ID!;
 const CATEGORIES_DS = process.env.NOTION_CATEGORIES_DATA_SOURCE_ID!;
@@ -334,4 +335,104 @@ export async function updateNotionTodoStatus(
       Status: { status: { name: status } },
     },
   });
+}
+
+type DataSourceObjectResponse = {
+  properties: Record<string, { type?: string; [k: string]: unknown }>;
+};
+
+function formatNotionDateProp(d: Date, isDatetime: boolean): { start: string } {
+  if (isDatetime) return { start: d.toISOString() };
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return { start: `${y}-${m}-${day}` };
+}
+
+/**
+ * Resolves the To-Dos data source title property key (e.g. "Task name") for pages.create.
+ */
+export async function getTodosTitlePropertyName(): Promise<string> {
+  if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
+  const c = client() as unknown as {
+    dataSources: { retrieve: (args: { data_source_id: string }) => Promise<DataSourceObjectResponse> };
+  };
+  const ds = await c.dataSources.retrieve({ data_source_id: TODOS_DS });
+  for (const [key, cfg] of Object.entries(ds.properties ?? {})) {
+    if (cfg && typeof cfg === "object" && "type" in cfg && cfg.type === "title") return key;
+  }
+  throw new Error("To-Dos data source has no title property");
+}
+
+export type CreateTodoFromTodoistMirrorInput = {
+  title: string;
+  notionParentPageId: string;
+  /** Todoist-side task (DB row) used for Status / priority / dates on the new Notion page. */
+  task: Pick<TodoistTask, "checked" | "labels" | "priority" | "dueDate" | "deadline">;
+};
+
+/**
+ * Creates a sub-task page under the To-Dos data source with "Parent task" set.
+ * Caller must validate the parent is a top-level project row; syncs the new page into `notion_pages`.
+ */
+export async function createTodoPageFromTodoistMirror(
+  input: CreateTodoFromTodoistMirrorInput,
+): Promise<{ pageId: string }> {
+  if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
+  if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
+
+  const titleKey = await getTodosTitlePropertyName();
+  const t = {
+    id: "temp",
+    projectId: null,
+    parentId: null,
+    content: input.title,
+    dueDate: input.task.dueDate,
+    dueString: null,
+    dueIsRecurring: false,
+    deadline: input.task.deadline,
+    priority: input.task.priority,
+    checked: input.task.checked,
+    labels: input.task.labels ?? [],
+    description: null,
+    raw: {},
+    updatedAt: new Date(),
+  } as unknown as TodoistTask;
+
+  const status = notionStatusFromTodoist(t);
+  const priorityName = PRIORITY_TODOIST_TO_NOTION[input.task.priority] ?? null;
+
+  const properties: Record<string, unknown> = {
+    [titleKey]: {
+      title: [{ type: "text" as const, text: { content: input.title } }],
+    },
+    Status: { status: { name: status } },
+    "Parent task": { relation: [{ id: input.notionParentPageId }] },
+  };
+
+  if (priorityName) {
+    properties.Priority = { select: { name: priorityName } };
+  }
+
+  const due = input.task.dueDate;
+  const dl = input.task.deadline;
+  if (due) {
+    properties.Date = {
+      date: formatNotionDateProp(due, false),
+    };
+  }
+  if (dl && (!due || dl.getTime() !== due.getTime())) {
+    properties.Deadline = {
+      date: formatNotionDateProp(dl, false),
+    };
+  }
+
+  const created = await client().pages.create({
+    parent: { type: "data_source_id", data_source_id: TODOS_DS },
+    properties: properties as never,
+  });
+
+  const pageId = created.id;
+  await syncNotionEntitiesByIds([pageId], new Map([[pageId, "todo"]]));
+  return { pageId };
 }

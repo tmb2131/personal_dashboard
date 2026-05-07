@@ -4,6 +4,7 @@ import * as chrono from "chrono-node";
 import { TodoistApi } from "@doist/todoist-api-typescript";
 import { auth } from "@/lib/auth";
 import { applyDashboardToggle } from "@/lib/sync/orchestrator";
+import { pushNotionPageToTodoist, pushTodoistTaskToNotion } from "@/lib/sync/cross-post";
 import { syncTodoist } from "@/lib/sync/todoist";
 
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
@@ -58,6 +59,39 @@ export async function quickAddAction(raw: string): Promise<QuickAddResult> {
       ok: true,
       summary: created.content + (dueDate ? ` · ${dueDate.toLocaleDateString()}` : ""),
     };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export type CrossPostResult = { ok: true } | { ok: false; error: string };
+
+export async function pushNotionTaskToTodoistAction(notionPageId: string): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!notionPageId) return { ok: false, error: "Missing Notion page" };
+  if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
+  try {
+    await pushNotionPageToTodoist(notionPageId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function pushTodoistTaskToNotionAction(args: {
+  todoistTaskId: string;
+  notionParentPageId: string;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.todoistTaskId || !args.notionParentPageId) {
+    return { ok: false, error: "Missing task or parent" };
+  }
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+  try {
+    await pushTodoistTaskToNotion(args.todoistTaskId, args.notionParentPageId);
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

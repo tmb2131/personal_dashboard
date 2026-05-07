@@ -99,6 +99,8 @@ export type DashboardData = {
   events: CalendarEvent[];
   todayEvents: CalendarEvent[];
   todayTasks: Subtask[];
+  /** Top-level Notion "Task name" rows for choosing a parent when posting Todoist → Notion. */
+  notionProjectPicklist: { id: string; title: string }[];
   next3Days: DayGroupedEvents[];
   projects: ProjectGroups;
   upcomingTrips: Project[];
@@ -169,6 +171,10 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   // Project = top-level "Task name" row (no parent task)
   // Subtask = row linked via "Parent task" (sub-item)
   const projectPages = pages.filter((p) => !p.ignore && !p.parentId);
+  const notionProjectPicklist = projectPages
+    .filter((p) => !p.archived && p.status !== "Done" && p.focus !== "Life Area")
+    .map((p) => ({ id: p.id, title: p.title }))
+    .sort((a, b) => a.title.localeCompare(b.title));
   const subtaskPages = pages.filter((p) => !p.ignore && Boolean(p.parentId));
 
   const subtasksByParent = new Map<string, Subtask[]>();
@@ -448,6 +454,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     events,
     todayEvents,
     todayTasks,
+    notionProjectPicklist,
     next3Days,
     projects,
     upcomingTrips,

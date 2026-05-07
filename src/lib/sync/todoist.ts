@@ -30,6 +30,31 @@ type TodoistProject = {
   isArchived?: boolean;
 };
 
+/** Todoist inbox project id (REST v2 marks inbox explicitly when present). */
+export async function getInboxProjectId(): Promise<string> {
+  type Proj = TodoistProject & { inbox_project?: boolean };
+  const result = (await (api() as unknown as {
+    getProjects: () => Promise<Proj[] | { results: Proj[] }>;
+  }).getProjects()) as Proj[] | { results: Proj[] };
+  const list = Array.isArray(result) ? result : result.results;
+  const inbox = list.find(
+    (p) => (p as Proj).inbox_project === true || (p.name ?? "").toLowerCase() === "inbox",
+  );
+  if (!inbox) throw new Error("Todoist inbox project not found");
+  return inbox.id;
+}
+
+/** Todoist project whose name is exactly `Personal` (case-insensitive). */
+export async function getPersonalProjectId(): Promise<string> {
+  const result = (await (api() as unknown as {
+    getProjects: () => Promise<TodoistProject[] | { results: TodoistProject[] }>;
+  }).getProjects()) as TodoistProject[] | { results: TodoistProject[] };
+  const list = Array.isArray(result) ? result : result.results;
+  const personal = list.find((p) => (p.name ?? "").trim().toLowerCase() === "personal");
+  if (!personal) throw new Error('Todoist project named "Personal" not found');
+  return personal.id;
+}
+
 async function fetchAllProjects(): Promise<TodoistProject[]> {
   const out: TodoistProject[] = [];
   // The SDK paginates internally; v7+ returns { results, nextCursor } shapes for some calls.

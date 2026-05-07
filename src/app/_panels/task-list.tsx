@@ -7,7 +7,15 @@ import { TaskRow } from "./task-row";
 import { AddTaskRow } from "./add-task-row";
 import { useTodayRecurringTasksVisibility } from "./today-recurring-tasks-context";
 
-export function TaskList({ tasks, source = "todoist" }: { tasks: Subtask[]; source?: string }) {
+export function TaskList({
+  tasks,
+  notionProjectPicklist,
+  source = "todoist",
+}: {
+  tasks: Subtask[];
+  notionProjectPicklist: { id: string; title: string }[];
+  source?: string;
+}) {
   const { showRecurringTodayTasks, setShowRecurringTodayTasks } = useTodayRecurringTasksVisibility();
 
   const visibleTasks = useMemo(
@@ -62,7 +70,7 @@ export function TaskList({ tasks, source = "todoist" }: { tasks: Subtask[]; sour
       ) : (
         <ul>
           {visibleTasks.map((t) => (
-            <TaskRow key={t.key} t={t} />
+            <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
           ))}
         </ul>
       )}

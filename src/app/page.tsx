@@ -77,7 +77,7 @@ npm run dev`}
 
         <div className="grid flex-1 min-h-0 grid-cols-1 gap-x-6 px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">
           <div className="min-w-0">
-            <TaskList tasks={data.todayTasks} />
+            <TaskList tasks={data.todayTasks} notionProjectPicklist={data.notionProjectPicklist} />
           </div>
 
           <div className="min-w-0">

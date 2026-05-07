@@ -49,6 +49,10 @@ export async function quickAddAction(
   // so the task content stays clean ("reply to investor" rather than "reply to investor tomorrow 9am").
   const parsed = chrono.parse(text, new Date(), { forwardDate: true })[0];
   const dueDate = parsed?.start.date() ?? null;
+  const dueHasTime = parsed?.start.isCertain("hour") === true;
+  const dueDateOnly = dueDate
+    ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`
+    : null;
   const content = parsed
     ? (text.slice(0, parsed.index) + text.slice(parsed.index + parsed.text.length)).replace(/\s+/g, " ").trim()
     : text;
@@ -91,7 +95,9 @@ export async function quickAddAction(
     const labels = projectLabel ? [projectLabel.slice(0, 60)] : undefined;
     const baseArgs = { content, ...(projectId ? { projectId } : {}), ...(labels ? { labels } : {}) };
     const args = dueDate
-      ? { ...baseArgs, dueDatetime: dueDate.toISOString() }
+      ? dueHasTime
+        ? { ...baseArgs, dueDatetime: dueDate.toISOString() }
+        : { ...baseArgs, dueDate: dueDateOnly! }
       : baseArgs;
     const created = await api.addTask(args as Parameters<typeof api.addTask>[0]);
 
@@ -100,9 +106,7 @@ export async function quickAddAction(
         const { pageId } = await createNotionProjectSubtask({
           notionParentPageId: selectedNotionProjectId,
           title: content,
-          dueDate: dueDate
-            ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`
-            : null,
+          dueDate: dueDateOnly,
         });
         await syncTodoistTasksByIds([created.id]);
         await insertTaskLinkForPair(pageId, created.id);
@@ -145,7 +149,7 @@ export type CrossPostResult = { ok: true } | { ok: false; error: string };
 async function updateTodoistTaskDueViaRest(args: {
   token: string;
   taskId: string;
-  payload: { due_datetime?: string; due_string?: string };
+  payload: { due_date?: string; due_datetime?: string; due_string?: string };
 }) {
   let lastError = "Todoist update failed";
   const endpoints = [
@@ -272,7 +276,8 @@ export async function setProjectFocusAction(args: {
 
 export async function setTodoistTaskDueAction(args: {
   todoistTaskId: string;
-  dueDatetime: string | null;
+  dueDate: string | null;
+  dueTime?: string | null;
 }): Promise<CrossPostResult> {
   const session = await auth();
   if (!session) return { ok: false, error: "Not signed in" };
@@ -280,19 +285,26 @@ export async function setTodoistTaskDueAction(args: {
   if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
 
   try {
-    if (args.dueDatetime == null) {
+    if (args.dueDate == null) {
       await updateTodoistTaskDueViaRest({
         token: process.env.TODOIST_TOKEN,
         taskId: args.todoistTaskId,
         payload: { due_string: "no date" },
       });
-    } else {
-      const parsed = new Date(args.dueDatetime);
+    } else if (args.dueTime) {
+      const parsed = new Date(`${args.dueDate}T${args.dueTime}`);
       if (Number.isNaN(parsed.getTime())) return { ok: false, error: "Invalid date/time" };
       await updateTodoistTaskDueViaRest({
         token: process.env.TODOIST_TOKEN,
         taskId: args.todoistTaskId,
         payload: { due_datetime: parsed.toISOString() },
+      });
+    } else {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(args.dueDate)) return { ok: false, error: "Invalid date" };
+      await updateTodoistTaskDueViaRest({
+        token: process.env.TODOIST_TOKEN,
+        taskId: args.todoistTaskId,
+        payload: { due_date: args.dueDate },
       });
     }
 

@@ -6,11 +6,10 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState, useTransition } from "react";
 import {
   createProjectAction,
-  createProjectSubtaskAction,
   setProjectFocusAction,
   setProjectStatusAction,
-  updateProjectSubtaskAction,
 } from "../actions";
+import { ProjectSubtaskPlanner } from "./project-subtask-planner";
 import { SectionHeader } from "./section-header";
 
 type ProjectStatus = "Not started" | "In progress" | "Done";
@@ -82,17 +81,6 @@ function FocusStarIcon({ filled }: { filled: boolean }) {
   );
 }
 
-function toDateInputValue(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function dueLabel(date: Date | null, deadline: Date | null): string {
-  const ref = date ?? deadline;
-  if (!ref) return "No due date";
-  return ref.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
 function ProjectRow({ p }: { p: Project }) {
   const router = useRouter();
   const [focusOverride, setFocusOverride] = useState<boolean | null>(null);
@@ -100,16 +88,7 @@ function ProjectRow({ p }: { p: Project }) {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [statusPending, startStatusTransition] = useTransition();
-  const [taskPending, startTaskTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newDescription, setNewDescription] = useState("");
-  const [newDueDate, setNewDueDate] = useState("");
-  const [taskError, setTaskError] = useState<string | null>(null);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState("");
-  const [editingDescription, setEditingDescription] = useState("");
-  const [editingDueDate, setEditingDueDate] = useState("");
 
   const isFocus = focusOverride ?? (p.focus === "Yes");
   const currentStatus: ProjectStatus =
@@ -167,62 +146,6 @@ function ProjectRow({ p }: { p: Project }) {
         return;
       }
       setStatusOverride(null);
-      router.refresh();
-    });
-  };
-
-  const handleAddSubtask = (e: FormEvent) => {
-    e.preventDefault();
-    const title = newTitle.trim();
-    if (!title) return;
-    setTaskError(null);
-    startTaskTransition(async () => {
-      const result = await createProjectSubtaskAction({
-        notionParentPageId: p.id,
-        title,
-        description: newDescription,
-        dueDate: newDueDate || null,
-      });
-      if (!result.ok) {
-        setTaskError(result.error);
-        return;
-      }
-      setNewTitle("");
-      setNewDescription("");
-      setNewDueDate("");
-      setExpanded(true);
-      router.refresh();
-    });
-  };
-
-  const beginEdit = (task: Project["subtasks"][number]) => {
-    if (!task.notionPageId) return;
-    const taskDue = task.date ?? task.deadline;
-    setEditingTaskId(task.notionPageId);
-    setEditingTitle(task.title);
-    setEditingDescription(task.description ?? "");
-    setEditingDueDate(taskDue ? toDateInputValue(taskDue) : "");
-    setTaskError(null);
-  };
-
-  const saveEdit = () => {
-    if (!editingTaskId || !editingTitle.trim()) return;
-    setTaskError(null);
-    startTaskTransition(async () => {
-      const result = await updateProjectSubtaskAction({
-        notionPageId: editingTaskId,
-        title: editingTitle.trim(),
-        description: editingDescription,
-        dueDate: editingDueDate || null,
-      });
-      if (!result.ok) {
-        setTaskError(result.error);
-        return;
-      }
-      setEditingTaskId(null);
-      setEditingTitle("");
-      setEditingDescription("");
-      setEditingDueDate("");
       router.refresh();
     });
   };
@@ -291,127 +214,7 @@ function ProjectRow({ p }: { p: Project }) {
         )}
       </div>
       {expanded && (
-        <div className="mt-2 ml-[44px]">
-          {sortedSubtasks.length === 0 ? (
-            <div className="pb-2 text-[12px] text-fg-subtle">No open sub-tasks.</div>
-          ) : (
-            <ul className="space-y-1 pb-2">
-              {sortedSubtasks.map((s) => {
-                const rowKey = s.notionPageId ?? s.key;
-                const isEditing = Boolean(s.notionPageId && editingTaskId === s.notionPageId);
-                return (
-                  <li key={rowKey} className="rounded border border-border px-2.5 py-2">
-                    {isEditing ? (
-                      <div className="space-y-1.5">
-                        <input
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          disabled={taskPending}
-                          className="h-7 w-full rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none"
-                        />
-                        <textarea
-                          value={editingDescription}
-                          onChange={(e) => setEditingDescription(e.target.value)}
-                          placeholder="Description"
-                          disabled={taskPending}
-                          rows={2}
-                          className="w-full resize-none rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
-                        />
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="date"
-                            value={editingDueDate}
-                            onChange={(e) => setEditingDueDate(e.target.value)}
-                            disabled={taskPending}
-                            className="h-7 rounded border border-border bg-bg px-2 text-[11px] text-fg"
-                          />
-                          <button
-                            type="button"
-                            onClick={saveEdit}
-                            disabled={taskPending || !editingTitle.trim()}
-                            className="rounded border border-border bg-bg-elevated px-2 py-1 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
-                          >
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingTaskId(null);
-                              setEditingTitle("");
-                              setEditingDescription("");
-                              setEditingDueDate("");
-                              setTaskError(null);
-                            }}
-                            disabled={taskPending}
-                            className="rounded border border-border bg-bg-elevated px-2 py-1 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className={cn("min-w-0 flex-1 truncate text-[12px]", s.done && "line-through text-fg-subtle")}>
-                            {s.title}
-                          </span>
-                          <span className="shrink-0 text-[11px] text-fg-subtle">{dueLabel(s.date, s.deadline)}</span>
-                          {s.notionPageId && (
-                            <button
-                              type="button"
-                              onClick={() => beginEdit(s)}
-                              disabled={taskPending}
-                              className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </div>
-                        {s.description && (
-                          <div className="truncate pl-0 text-[11px] text-fg-subtle">
-                            {s.description}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <form onSubmit={handleAddSubtask} className="flex flex-wrap items-center gap-1.5">
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Add sub-task title"
-              disabled={taskPending}
-              className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
-            />
-            <input
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              placeholder="Description"
-              disabled={taskPending}
-              className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
-            />
-            <input
-              type="date"
-              value={newDueDate}
-              onChange={(e) => setNewDueDate(e.target.value)}
-              disabled={taskPending}
-              className="h-7 rounded border border-border bg-bg px-2 text-[11px] text-fg"
-            />
-            <button
-              type="submit"
-              disabled={taskPending || !newTitle.trim()}
-              className="rounded border border-border bg-bg-elevated px-2 py-1 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
-            >
-              Add
-            </button>
-          </form>
-          {taskError && <div className="mt-1 text-[11px] text-red-500">{taskError}</div>}
-        </div>
+        <ProjectSubtaskPlanner parentId={p.id} subtasks={sortedSubtasks} className="mt-2 ml-[44px]" />
       )}
     </li>
   );
@@ -571,7 +374,7 @@ export function Projects({
         : "No projects";
 
   return (
-    <section className="border-t border-border">
+    <section id="projects" className="border-t border-border scroll-mt-6">
       <SectionHeader eyebrow="Projects" title="" count={groups.all.length} source="notion" />
 
       <div className="flex flex-wrap items-center gap-1 px-5 pb-2">

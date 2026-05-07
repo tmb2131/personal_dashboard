@@ -9,6 +9,7 @@ import {
   pushTodoistTaskToNotionAction,
   toggleTaskDoneAction,
 } from "../actions";
+import { TaskDetailExpansion } from "./task-detail-expansion";
 
 export function TaskRow({
   t,
@@ -23,6 +24,7 @@ export function TaskRow({
   const [crossPostError, setCrossPostError] = useState<string | null>(null);
   const [selectedParent, setSelectedParent] = useState("");
   const [showNotionProjectSelector, setShowNotionProjectSelector] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const resolvedNotionParent =
     notionProjectPicklist.find((p) => p.id === selectedParent)?.id
@@ -85,7 +87,8 @@ export function TaskRow({
   };
 
   return (
-    <li className="group flex items-start gap-3 px-5 py-2.5">
+    <li className="group px-5 py-2.5">
+      <div className="flex items-start gap-3">
       <button
         type="button"
         onClick={handleClick}
@@ -118,14 +121,17 @@ export function TaskRow({
       </button>
 
       <div className="min-w-0 flex-1">
-        <div
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
           className={cn(
-            "truncate text-[13.5px]",
+            "truncate text-left text-[13.5px] hover:text-fg-muted",
             done && "line-through text-fg-subtle",
           )}
+          title={expanded ? "Hide details" : "Show details"}
         >
           {t.title}
-        </div>
+        </button>
         {(t.estimateMinutes || t.projectTitle) && (
           <div
             className={cn(
@@ -209,6 +215,11 @@ export function TaskRow({
           </div>
         )}
       </div>
+      </div>
+
+      {expanded && (
+        <TaskDetailExpansion t={t} extraError={crossPostError} />
+      )}
     </li>
   );
 }

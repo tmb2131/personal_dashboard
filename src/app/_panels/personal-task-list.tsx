@@ -3,131 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Subtask } from "@/lib/dashboard-data";
-import { cn, formatRelativeDay, formatTimeWithSuffix } from "@/lib/utils";
-import { setTodoistTaskDueAction } from "../actions";
-import { setTodoistTaskDescriptionAction } from "../actions";
+import { cn } from "@/lib/utils";
 import { toggleTaskDoneAction } from "../actions";
 import { SectionHeader } from "./section-header";
-
-function formatDue(date: Date | null, dateHasTime: boolean, deadline: Date | null): string {
-  const ref = date ?? deadline;
-  if (!ref) return "No due date";
-  const day = formatRelativeDay(ref);
-  return dateHasTime ? `${day} ${formatTimeWithSuffix(ref)}` : day;
-}
-
-function toLocalDatetimeInputValue(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function PersonalTaskDueEditor({ t }: { t: Subtask }) {
-  const router = useRouter();
-  const [editing, setEditing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const initialRef = t.date ?? t.deadline;
-  const [draft, setDraft] = useState(initialRef ? toLocalDatetimeInputValue(initialRef) : "");
-
-  if (!t.todoistTaskId) {
-    return (
-      <span className="shrink-0 text-[11px] text-fg-subtle tabular-nums">
-        {formatDue(t.date, t.dateHasTime, t.deadline)}
-      </span>
-    );
-  }
-  const todoistTaskId = t.todoistTaskId;
-
-  const save = () => {
-    if (!draft) return;
-    setError(null);
-    startTransition(async () => {
-      const result = await setTodoistTaskDueAction({
-        todoistTaskId,
-        dueDatetime: draft,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      setEditing(false);
-      router.refresh();
-    });
-  };
-
-  const clear = () => {
-    setError(null);
-    startTransition(async () => {
-      const result = await setTodoistTaskDueAction({
-        todoistTaskId,
-        dueDatetime: null,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      setEditing(false);
-      setDraft("");
-      router.refresh();
-    });
-  };
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="shrink-0 text-[11px] text-fg-subtle tabular-nums hover:text-fg"
-        title="Edit due date/time"
-      >
-        {formatDue(t.date, t.dateHasTime, t.deadline)}
-      </button>
-    );
-  }
-
-  return (
-    <div className="shrink-0 space-y-1 text-right">
-      <input
-        type="datetime-local"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        disabled={pending}
-        className="rounded border border-border bg-bg px-1.5 py-0.5 text-[11px] text-fg"
-      />
-      <div className="flex justify-end gap-1 text-[11px]">
-        <button
-          type="button"
-          onClick={save}
-          disabled={pending || !draft}
-          className="rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-fg-muted hover:text-fg disabled:opacity-50"
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          onClick={clear}
-          disabled={pending}
-          className="rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-fg-muted hover:text-fg disabled:opacity-50"
-        >
-          No date
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setEditing(false);
-            setDraft(initialRef ? toLocalDatetimeInputValue(initialRef) : "");
-            setError(null);
-          }}
-          disabled={pending}
-          className="rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-fg-muted hover:text-fg disabled:opacity-50"
-        >
-          Cancel
-        </button>
-      </div>
-      {error && <div className="text-[11px] text-red-500">{error}</div>}
-    </div>
-  );
-}
+import { formatTaskDue, TaskDetailExpansion } from "./task-detail-expansion";
 
 type PersonalTaskView = "personal" | "next7Days";
 
@@ -142,10 +21,7 @@ function PersonalTaskRow({
   const [done, setDone] = useState(t.done);
   const [pending, startTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
-  const [draftDescription, setDraftDescription] = useState(t.description ?? "");
-  const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const canToggle = Boolean(t.notionPageId || t.todoistTaskId);
-  const canEditDescription = Boolean(t.todoistTaskId);
 
   const handleToggleDone = () => {
     if (!canToggle) return;
@@ -159,22 +35,6 @@ function PersonalTaskRow({
       });
       if (!result.ok) {
         setDone(!next);
-        return;
-      }
-      router.refresh();
-    });
-  };
-
-  const saveDescription = () => {
-    if (!t.todoistTaskId) return;
-    setDescriptionError(null);
-    startTransition(async () => {
-      const result = await setTodoistTaskDescriptionAction({
-        todoistTaskId: t.todoistTaskId!,
-        description: draftDescription,
-      });
-      if (!result.ok) {
-        setDescriptionError(result.error);
         return;
       }
       router.refresh();
@@ -232,51 +92,16 @@ function PersonalTaskRow({
           )}
         </div>
       </div>
-      <PersonalTaskDueEditor t={t} />
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="shrink-0 text-[11px] text-fg-subtle tabular-nums hover:text-fg"
+        title={expanded ? "Hide details" : "Show details"}
+      >
+        {formatTaskDue(t)}
+      </button>
       </div>
-      {expanded && (
-        <div className="ml-[30px] mt-2 rounded border border-border bg-bg-elevated/60 p-2">
-          <div className="mb-1 text-[11px] text-fg-subtle">Description</div>
-          {canEditDescription ? (
-            <>
-              <textarea
-                value={draftDescription}
-                onChange={(e) => setDraftDescription(e.target.value)}
-                rows={4}
-                disabled={pending}
-                placeholder="Add task details..."
-                className="w-full resize-y rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg outline-none focus:border-fg-muted"
-              />
-              <div className="mt-1 flex items-center gap-2 text-[11px]">
-                <button
-                  type="button"
-                  onClick={saveDescription}
-                  disabled={pending}
-                  className="rounded border border-border bg-bg px-2 py-0.5 text-fg-muted hover:text-fg disabled:opacity-50"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraftDescription(t.description ?? "");
-                    setDescriptionError(null);
-                  }}
-                  disabled={pending}
-                  className="rounded border border-border bg-bg px-2 py-0.5 text-fg-muted hover:text-fg disabled:opacity-50"
-                >
-                  Reset
-                </button>
-                {descriptionError && <span className="text-red-500">{descriptionError}</span>}
-              </div>
-            </>
-          ) : (
-            <div className="text-[12px] text-fg-subtle">
-              {t.description?.trim() || "No description."}
-            </div>
-          )}
-        </div>
-      )}
+      {expanded && <TaskDetailExpansion t={t} />}
     </li>
   );
 }
@@ -302,7 +127,7 @@ export function PersonalTaskList({
   };
 
   return (
-    <section className="border-t border-border">
+    <section id="personal-tasks" className="border-t border-border scroll-mt-6">
       <SectionHeader
         eyebrow="Personal"
         title="Tasks"

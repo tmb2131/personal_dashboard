@@ -28,7 +28,7 @@ export function TaskList({
   const isEmpty = total === 0;
 
   return (
-    <section className="border-t border-border">
+    <section id="today-tasks" className="border-t border-border scroll-mt-6">
       <SectionHeader eyebrow="Today" title="Tasks" count={ratio} source={source}>
         <div className="flex cursor-default select-none items-center gap-2 text-[11px] text-fg-muted">
           <span className="max-w-[9rem] leading-snug normal-case tracking-normal">

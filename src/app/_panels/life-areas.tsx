@@ -3,7 +3,7 @@ import { SectionHeader } from "./section-header";
 
 export function LifeAreas({ areas }: { areas: Project[] }) {
   return (
-    <section className="border-t border-border">
+    <section id="life-areas" className="border-t border-border scroll-mt-6">
       <SectionHeader eyebrow="Life Areas" title="" count={areas.length} source="notion" />
 
       {areas.length === 0 ? (

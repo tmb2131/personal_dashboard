@@ -110,7 +110,7 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
   );
 
   return (
-    <section className="border-t border-border">
+    <section id="next-3-days" className="border-t border-border scroll-mt-6">
       <SectionHeader eyebrow="Next 3 Days" title="" count={total} source="google cal" />
 
       <div className="px-4 pb-4 sm:px-5">

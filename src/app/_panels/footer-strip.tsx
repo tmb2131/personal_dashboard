@@ -61,7 +61,10 @@ export function FooterStrip({
   });
 
   return (
-    <footer className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-8 py-3 text-[11px] text-fg-subtle">
+    <footer
+      id="review-strip"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-8 py-3 pb-20 text-[11px] text-fg-subtle sm:pb-3"
+    >
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>
           Synced <span className="tabular-nums">{relativeAgo(lastSyncAt, now)}</span>

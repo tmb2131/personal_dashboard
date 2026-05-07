@@ -83,7 +83,7 @@ npm run dev`}
           </div>
 
           <div className="min-w-0">
-            <Projects groups={data.projects} />
+            <Projects groups={data.projects} categories={data.notionCategoryPicklist} />
           </div>
 
           <div className="min-w-0">

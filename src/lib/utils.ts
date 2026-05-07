@@ -106,3 +106,30 @@ export function daysBetween(a: Date, b: Date): number {
   const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
   return Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / 86_400_000);
 }
+
+/**
+ * Returns true when the user is actively typing into a form field
+ * (inputs, textareas, native selects, or any contenteditable host). Use this to
+ * suppress global keyboard shortcuts (e.g. ⌃⌘N, ⌃⌘D) from firing while the
+ * caret is in a form field.
+ *
+ * Checks both the event target and `document.activeElement` because key events
+ * dispatched on `window` don't always carry the focused element as `e.target`
+ * (e.g. when focus lives inside a portal/shadow root, or while IME composition
+ * is active and the target gets reparented).
+ */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const seen = new Set<Element>();
+  const candidates: (Element | null | undefined)[] = [
+    target instanceof Element ? target : null,
+    typeof document !== "undefined" ? document.activeElement : null,
+  ];
+  for (const el of candidates) {
+    if (!el || seen.has(el)) continue;
+    seen.add(el);
+    const tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (el instanceof HTMLElement && el.isContentEditable) return true;
+  }
+  return false;
+}

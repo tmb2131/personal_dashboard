@@ -5,11 +5,68 @@ import type { Project, ProjectGroups } from "@/lib/dashboard-data";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState, useTransition } from "react";
 import {
+  createProjectAction,
   createProjectSubtaskAction,
   setProjectFocusAction,
+  setProjectStatusAction,
   updateProjectSubtaskAction,
 } from "../actions";
 import { SectionHeader } from "./section-header";
+
+type ProjectStatus = "Not started" | "In progress" | "Done";
+const PROJECT_STATUSES: ProjectStatus[] = ["Not started", "In progress", "Done"];
+
+type CategoryOption = { id: string; title: string };
+
+function statusPillClasses(status: ProjectStatus): string {
+  switch (status) {
+    case "In progress":
+      return "bg-accent-soft text-accent";
+    case "Done":
+      return "bg-pill-bg text-fg-muted line-through";
+    case "Not started":
+    default:
+      return "bg-pill-bg text-pill-fg";
+  }
+}
+
+function StatusBadge({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: ProjectStatus;
+  disabled: boolean;
+  onChange: (next: ProjectStatus) => void;
+}) {
+  return (
+    <span className="relative inline-flex">
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none inline-flex h-5 items-center rounded-full px-2 text-[10px] tracking-[0.08em] uppercase",
+          statusPillClasses(value),
+          disabled && "opacity-60",
+        )}
+      >
+        {value}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as ProjectStatus)}
+        disabled={disabled}
+        aria-label="Project status"
+        className="absolute inset-0 cursor-pointer opacity-0"
+      >
+        {PROJECT_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
 
 function FocusStarIcon({ filled }: { filled: boolean }) {
   return (
@@ -39,7 +96,10 @@ function dueLabel(date: Date | null, deadline: Date | null): string {
 function ProjectRow({ p }: { p: Project }) {
   const router = useRouter();
   const [focusOverride, setFocusOverride] = useState<boolean | null>(null);
+  const [statusOverride, setStatusOverride] = useState<ProjectStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [statusPending, startStatusTransition] = useTransition();
   const [taskPending, startTaskTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -50,6 +110,8 @@ function ProjectRow({ p }: { p: Project }) {
   const [editingDueDate, setEditingDueDate] = useState("");
 
   const isFocus = focusOverride ?? (p.focus === "Yes");
+  const currentStatus: ProjectStatus =
+    statusOverride ?? ((p.status as ProjectStatus | null) ?? "Not started");
 
   const dot = categoryDot(p.categoryTitle);
   const cat = shortCategoryLabel(p.categoryTitle);
@@ -83,6 +145,26 @@ function ProjectRow({ p }: { p: Project }) {
         return;
       }
       setFocusOverride(null);
+      router.refresh();
+    });
+  };
+
+  const handleStatusChange = (next: ProjectStatus) => {
+    if (next === currentStatus) return;
+    const previous = currentStatus;
+    setStatusOverride(next);
+    setStatusError(null);
+    startStatusTransition(async () => {
+      const result = await setProjectStatusAction({
+        notionPageId: p.id,
+        status: next,
+      });
+      if (!result.ok) {
+        setStatusOverride(previous);
+        setStatusError(result.error);
+        return;
+      }
+      setStatusOverride(null);
       router.refresh();
     });
   };
@@ -155,30 +237,43 @@ function ProjectRow({ p }: { p: Project }) {
         >
           <FocusStarIcon filled={isFocus} />
         </button>
+        <span
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ background: dot }}
+        />
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
           aria-expanded={expanded}
         >
-          <span
-            className="h-2 w-2 shrink-0 rounded-full"
-            style={{ background: dot }}
-          />
           <span className="truncate text-[13.5px] font-medium">{p.title}</span>
           {cat && (
             <span className="text-[10px] tracking-[0.14em] text-fg-subtle">{cat}</span>
           )}
-          <span className="ml-auto flex shrink-0 items-baseline gap-3 text-[11px] text-fg-muted">
-            {p.openSubtasks > 0 && (
-              <span className="tabular-nums">
-                {p.openSubtasks} open
-              </span>
-            )}
-            <span className="text-fg-subtle">{expanded ? "Hide" : "Show"}</span>
-          </span>
         </button>
+        <span className="flex shrink-0 items-center gap-2 text-[11px] text-fg-muted">
+          {p.openSubtasks > 0 && (
+            <span className="tabular-nums">{p.openSubtasks} open</span>
+          )}
+          <StatusBadge
+            value={currentStatus}
+            disabled={statusPending}
+            onChange={handleStatusChange}
+          />
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-fg-subtle hover:text-fg-muted"
+            aria-expanded={expanded}
+          >
+            {expanded ? "Hide" : "Show"}
+          </button>
+        </span>
       </div>
+      {statusError && (
+        <div className="mt-1 ml-[44px] text-[11px] text-red-500">{statusError}</div>
+      )}
       <div className="mt-1.5 ml-[44px]">
         {nextStep ? (
           <span className="truncate text-[12px] text-fg-muted">
@@ -314,7 +409,126 @@ function Tab({
   );
 }
 
-export function Projects({ groups }: { groups: ProjectGroups }) {
+function NewProjectRow({ categories }: { categories: CategoryOption[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [focus, setFocus] = useState<"Yes" | "No">("No");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const reset = () => {
+    setTitle("");
+    setCategoryId("");
+    setFocus("No");
+    setError(null);
+  };
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await createProjectAction({
+        title: title.trim(),
+        categoryId: categoryId || null,
+        focus,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      reset();
+      setOpen(false);
+      router.refresh();
+    });
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-2 px-5 py-2.5 text-left text-[12px] text-fg-subtle hover:text-fg"
+      >
+        <span className="text-[14px] leading-none">+</span>
+        New project
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-1.5 px-5 py-2.5">
+      <input
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            reset();
+            setOpen(false);
+          }
+        }}
+        placeholder="Project name"
+        disabled={pending}
+        className="h-8 w-full rounded border border-border bg-bg px-2 text-[13px] text-fg outline-none placeholder:text-fg-subtle"
+      />
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select
+          value={categoryId}
+          onChange={(e) => setCategoryId(e.target.value)}
+          disabled={pending}
+          className="h-7 rounded border border-border bg-bg px-2 text-[11px] text-fg"
+        >
+          <option value="">No category</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.title}
+            </option>
+          ))}
+        </select>
+        <label className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
+          <input
+            type="checkbox"
+            checked={focus === "Yes"}
+            onChange={(e) => setFocus(e.target.checked ? "Yes" : "No")}
+            disabled={pending}
+            className="h-3 w-3"
+          />
+          Focus
+        </label>
+        <button
+          type="submit"
+          disabled={pending || !title.trim()}
+          className="rounded border border-border bg-bg-elevated px-2 py-1 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
+        >
+          Add
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          disabled={pending}
+          className="rounded border border-border bg-bg-elevated px-2 py-1 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+      {error && <div className="text-[11px] text-red-500">{error}</div>}
+    </form>
+  );
+}
+
+export function Projects({
+  groups,
+  categories = [],
+}: {
+  groups: ProjectGroups;
+  categories?: CategoryOption[];
+}) {
   const [view, setView] = useState<"focus" | "nonFocus" | "all">("focus");
   const list =
     view === "focus" ? groups.focus : view === "nonFocus" ? groups.nonFocus : groups.all;
@@ -358,7 +572,7 @@ export function Projects({ groups }: { groups: ProjectGroups }) {
       </div>
 
       {list.length === 0 ? (
-        <div className="px-5 pb-5 text-[12px] text-fg-subtle">{emptyMessage}</div>
+        <div className="px-5 pb-2 text-[12px] text-fg-subtle">{emptyMessage}</div>
       ) : (
         <ul>
           {list.map((p) => (
@@ -366,6 +580,8 @@ export function Projects({ groups }: { groups: ProjectGroups }) {
           ))}
         </ul>
       )}
+
+      <NewProjectRow categories={categories} />
     </section>
   );
 }

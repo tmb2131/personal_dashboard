@@ -10,9 +10,11 @@ import { insertTaskLinkForPair } from "@/lib/sync/orchestrator";
 import { applyDashboardToggle } from "@/lib/sync/orchestrator";
 import { pushNotionPageToTodoist, pushTodoistTaskToNotion } from "@/lib/sync/cross-post";
 import {
+  createNotionProject,
   createNotionProjectSubtask,
   updateNotionFocus,
   updateNotionProjectSubtask,
+  updateNotionTodoStatus,
 } from "@/lib/sync/notion";
 import { getPersonalProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
 
@@ -294,6 +296,73 @@ export async function updateProjectSubtaskAction(args: {
     await updateNotionProjectSubtask(args);
     return { ok: true };
   } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function createProjectAction(args: {
+  title: string;
+  categoryId: string | null;
+  focus: "Yes" | "No";
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.title.trim()) return { ok: false, error: "Project title is required" };
+  if (args.focus !== "Yes" && args.focus !== "No") {
+    return { ok: false, error: "Invalid focus value" };
+  }
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    await createNotionProject({
+      title: args.title.trim(),
+      categoryId: args.categoryId?.trim() || null,
+      focus: args.focus,
+    });
+    await logAudit({ source: "dashboard", op: "create_project", payload: args });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "create_project_error",
+      payload: args,
+      error: (e as Error).message,
+    });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function setProjectStatusAction(args: {
+  notionPageId: string;
+  status: "Not started" | "In progress" | "Done";
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionPageId) return { ok: false, error: "Missing Notion page" };
+  if (!["Not started", "In progress", "Done"].includes(args.status)) {
+    return { ok: false, error: "Invalid status" };
+  }
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    await updateNotionTodoStatus(args.notionPageId, args.status);
+    await db
+      .update(schema.notionPages)
+      .set({ status: args.status, updatedAt: new Date() })
+      .where(eq(schema.notionPages.id, args.notionPageId));
+    await logAudit({
+      source: "dashboard",
+      op: "set_project_status",
+      payload: args,
+    });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "set_project_status_error",
+      payload: args,
+      error: (e as Error).message,
+    });
     return { ok: false, error: (e as Error).message };
   }
 }

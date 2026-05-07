@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { isEditableTarget } from "@/lib/utils";
 import { quickAddAction } from "../actions";
 
 type NotionProjectOption = { id: string; title: string };
@@ -53,7 +54,8 @@ export function AddTaskRow({ notionProjectPicklist }: { notionProjectPicklist: N
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "n") {
+      if (isEditableTarget(e.target)) return;
+      if (e.ctrlKey && e.metaKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         activateInput();
       }
@@ -128,7 +130,7 @@ export function AddTaskRow({ notionProjectPicklist }: { notionProjectPicklist: N
             setSelectedProject(null);
           }
         }}
-        placeholder="New task… (Shift+N, or @ to link a Notion project)"
+        placeholder="New task… (⌃⌘N, or @ to link a Notion project)"
         disabled={pending}
         spellCheck={false}
         className="h-7 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-fg-subtle"

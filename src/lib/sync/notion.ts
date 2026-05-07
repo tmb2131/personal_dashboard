@@ -346,6 +346,39 @@ export async function updateNotionFocus(pageId: string, focus: "Yes" | "No") {
   });
 }
 
+export async function createNotionProject(input: {
+  title: string;
+  categoryId: string | null;
+  focus: "Yes" | "No";
+}): Promise<{ pageId: string }> {
+  if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
+  if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
+  const title = input.title.trim();
+  if (!title) throw new Error("Project title is required");
+
+  const titleKey = await getTodosTitlePropertyName();
+  const properties: Record<string, unknown> = {
+    [titleKey]: {
+      title: [{ type: "text" as const, text: { content: title } }],
+    },
+    Status: { status: { name: "Not started" } },
+    Focus: { select: { name: input.focus } },
+  };
+
+  if (input.categoryId) {
+    properties.Category = { relation: [{ id: input.categoryId }] };
+  }
+
+  const created = await client().pages.create({
+    parent: { type: "data_source_id", data_source_id: TODOS_DS },
+    properties: properties as never,
+  });
+
+  const pageId = created.id;
+  await syncNotionEntitiesByIds([pageId], new Map([[pageId, "todo"]]));
+  return { pageId };
+}
+
 function parseDateOnlyInput(input: string): Date {
   const m = input.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) throw new Error("Invalid date format");

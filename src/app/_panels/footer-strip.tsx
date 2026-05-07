@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isEditableTarget } from "@/lib/utils";
 import { ManualSyncButton } from "./manual-sync-button";
 
 function relativeAgo(d: Date | null, now: Date): string {
@@ -37,7 +38,8 @@ export function FooterStrip({
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "d") {
+      if (isEditableTarget(e.target)) return;
+      if (e.ctrlKey && e.metaKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "d") {
         e.preventDefault();
         const isDark = html.classList.contains("theme-dark");
         const next = isDark ? "light" : "dark";
@@ -66,8 +68,8 @@ export function FooterStrip({
         <ManualSyncButton size="sm" />
       </span>
       <span>·</span>
-      <KeyHint k="⇧N" label="new task" />
-      <KeyHint k="⇧D" label="dark/light" />
+      <KeyHint k="⌃⌘N" label="new task" />
+      <KeyHint k="⌃⌘D" label="dark/light" />
 
       <span className="ml-auto font-serif italic text-fg-muted">{dateLabel}</span>
     </footer>

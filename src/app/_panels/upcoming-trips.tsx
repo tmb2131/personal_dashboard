@@ -96,13 +96,25 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
   );
 }
 
-export function UpcomingTrips({ trips, now }: { trips: Project[]; now: Date }) {
+export function UpcomingTrips({
+  trips,
+  now,
+  eyebrow = "Upcoming Trips",
+  sectionId = "upcoming-trips",
+  emptyCopy = "Nothing on the horizon",
+}: {
+  trips: Project[];
+  now: Date;
+  eyebrow?: string;
+  sectionId?: string;
+  emptyCopy?: string;
+}) {
   return (
-    <section id="upcoming-trips" className="border-t border-border scroll-mt-6">
-      <SectionHeader eyebrow="Upcoming Trips" title="" count={trips.length} source="notion" />
+    <section id={sectionId} className="border-t border-border scroll-mt-6">
+      <SectionHeader eyebrow={eyebrow} title="" count={trips.length} source="notion" />
 
       {trips.length === 0 ? (
-        <div className="px-5 pb-5 text-[12px] text-fg-subtle">Nothing on the horizon</div>
+        <div className="px-5 pb-5 text-[12px] text-fg-subtle">{emptyCopy}</div>
       ) : (
         <ul>
           {trips.map((trip) => (

@@ -111,6 +111,7 @@ export type DashboardData = {
   next3Days: DayGroupedEvents[];
   projects: ProjectGroups;
   upcomingTrips: Project[];
+  datelessTrips: Project[];
   lifeAreas: Project[];
   meta: DashboardMeta;
   lastSyncAt: Date | null;
@@ -683,6 +684,20 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     })
     .slice(0, 6);
 
+  // ----- Dateless trips (Travel/Events with no start date; exclude Done and empty shells)
+  const datelessTrips = allProjects
+    .filter((p) => isTravelEventsCategory(p.categoryTitle))
+    .filter((p) => p.dateStart == null && p.status !== "Done")
+    .filter((p) => normalizedTitle(p.title) !== null)
+    .sort((a, b) => {
+      if (a.status !== b.status) {
+        if (a.status === "In progress") return -1;
+        if (b.status === "In progress") return 1;
+      }
+      return a.title.localeCompare(b.title);
+    })
+    .slice(0, 8);
+
   // ----- Life areas (top-level pages with focus = Life Area)
   const lifeAreas = allProjects.filter((p) => p.isLifeArea).slice(0, 8);
 
@@ -714,6 +729,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     next3Days,
     projects,
     upcomingTrips,
+    datelessTrips,
     lifeAreas,
     meta,
     lastSyncAt,

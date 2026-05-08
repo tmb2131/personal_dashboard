@@ -3,6 +3,7 @@ import { PersonalTaskList } from "./_panels/personal-task-list";
 import { FooterStrip } from "./_panels/footer-strip";
 import { HeroHeader } from "./_panels/hero-header";
 import { Next3Days } from "./_panels/next-3-days";
+import { DashboardViewChips } from "./_panels/dashboard-view-chips";
 import { Projects } from "./_panels/projects";
 import { UpcomingTrips } from "./_panels/upcoming-trips";
 import { LifeAreas } from "./_panels/life-areas";
@@ -77,6 +78,7 @@ npm run dev`}
       <AutoTodoistSync />
       <main className="flex min-h-dvh flex-col overflow-x-clip">
         <HeroHeader meta={data.meta} initialNow={data.now} />
+        <DashboardViewChips />
         <Next3Days groups={data.next3Days} />
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-x-6 px-4 sm:px-6 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]">

@@ -63,7 +63,7 @@ export function FooterStrip({
   return (
     <footer
       id="review-strip"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 pb-20 text-[11px] text-fg-subtle sm:px-8 sm:pb-3"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-[11px] text-fg-subtle sm:px-8"
     >
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>

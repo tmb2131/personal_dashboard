@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { collectNotionPageIdsFromPayload, webhookFingerprint } from "./webhook-utils";
+import {
+  collectNotionEventIdsFromPayload,
+  collectNotionPageIdsFromPayload,
+  webhookFingerprint,
+} from "./webhook-utils";
 
 describe("webhook utils", () => {
   it("collects and deduplicates notion page ids", () => {
@@ -23,5 +27,14 @@ describe("webhook utils", () => {
     const c = webhookFingerprint('{"x":2}');
     expect(a).toBe(b);
     expect(a).not.toBe(c);
+  });
+
+  it("collects and deduplicates notion event ids", () => {
+    const ids = collectNotionEventIdsFromPayload({
+      event_id: "evt_123456789",
+      events: [{ id: "evt_abcdefghi" }, { event_id: "evt_abcdefghi" }, { id: "evt_xyzxyzxyz" }],
+    });
+
+    expect(ids).toEqual(["evt_123456789", "evt_abcdefghi", "evt_xyzxyzxyz"]);
   });
 });

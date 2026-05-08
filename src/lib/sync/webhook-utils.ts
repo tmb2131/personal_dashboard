@@ -50,3 +50,26 @@ export function collectNotionPageIdsFromPayload(body: Record<string, unknown>): 
 
   return [...new Set(ids)];
 }
+
+export function collectNotionEventIdsFromPayload(body: Record<string, unknown>): string[] {
+  const ids: string[] = [];
+
+  const push = (id: unknown) => {
+    if (typeof id === "string" && id.length > 8) ids.push(id);
+  };
+
+  push(body.id);
+  push(body.event_id);
+
+  if (Array.isArray(body.events)) {
+    for (const ev of body.events) {
+      if (ev && typeof ev === "object") {
+        const e = ev as { id?: string; event_id?: string };
+        push(e.id);
+        push(e.event_id);
+      }
+    }
+  }
+
+  return [...new Set(ids)];
+}

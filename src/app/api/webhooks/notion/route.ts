@@ -7,6 +7,7 @@ import { mirrorTodoistFromNotion } from "@/lib/sync/orchestrator";
 import { syncNotion, syncNotionEntitiesByIds } from "@/lib/sync/notion";
 import {
   MAX_WEBHOOK_BODY_BYTES,
+  collectNotionEventIdsFromPayload,
   collectNotionPageIdsFromPayload,
   isProductionRuntime,
   webhookFingerprint,
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
   }
 
   const pageIds = collectNotionPageIdsFromPayload(json);
+  const eventIds = collectNotionEventIdsFromPayload(json);
   const fingerprint = webhookFingerprint(body);
   const [existing] = await db
     .select({ id: schema.auditLog.id })
@@ -62,6 +64,7 @@ export async function POST(req: NextRequest) {
         eq(schema.auditLog.source, "webhook-notion"),
         eq(schema.auditLog.op, "event_received"),
         sql`payload->>'fingerprint' = ${fingerprint}`,
+        sql`coalesce(payload->>'eventId', '') = ${eventIds[0] ?? ""}`,
         sql`${schema.auditLog.ts} > now() - interval '30 minutes'`,
       ),
     )
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest) {
     await logAudit({
       source: "webhook-notion",
       op: "duplicate_ignored",
-      payload: { fingerprint, pageIds },
+      payload: { fingerprint, eventIds, pageIds },
     });
     return NextResponse.json({ ok: true });
   }
@@ -78,43 +81,14 @@ export async function POST(req: NextRequest) {
   await logAudit({
     source: "webhook-notion",
     op: "event_received",
-    payload: { fingerprint, pageIds },
+    payload: { fingerprint, eventId: eventIds[0] ?? null, eventIds, pageIds },
   });
 
-  try {
-    if (pageIds.length && process.env.NOTION_TOKEN) {
-      await syncNotionEntitiesByIds(pageIds);
-      for (const id of pageIds) {
-        try {
-          await mirrorTodoistFromNotion(id);
-        } catch (e) {
-          await logAudit({
-            source: "webhook-notion",
-            op: "mirror_error",
-            payload: { id },
-            error: (e as Error).message,
-          });
-        }
-      }
-      await logAudit({ source: "webhook-notion", op: "incremental", payload: { pageIds } });
-    } else {
-      await syncNotion();
-      await logAudit({
-        source: "webhook-notion",
-        op: pageIds.length ? "full_sync_no_token" : "full_sync_fallback",
-        payload: { pageIds },
-      });
-    }
-  } catch (e) {
-    const err = (e as Error).message;
-    await logAudit({ source: "webhook-notion", op: "incremental_error", error: err });
-    try {
-      await syncNotion();
-      await logAudit({ source: "webhook-notion", op: "full_sync_recover" });
-    } catch (e2) {
-      await logAudit({ source: "webhook-notion", op: "full_sync_failed", error: (e2 as Error).message });
-    }
-  }
+  runNotionWebhookWork({
+    pageIds,
+    eventIds,
+    fingerprint,
+  });
 
   return NextResponse.json({ ok: true });
 }
@@ -122,4 +96,82 @@ export async function POST(req: NextRequest) {
 function safeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+function runNotionWebhookWork({
+  pageIds,
+  eventIds,
+  fingerprint,
+}: {
+  pageIds: string[];
+  eventIds: string[];
+  fingerprint: string;
+}) {
+  const limitedPageIds = pageIds.slice(0, 40);
+  void Promise.resolve().then(async () => {
+    await logAudit({
+      source: "webhook-notion",
+      op: "processing_started",
+      payload: {
+        fingerprint,
+        eventId: eventIds[0] ?? null,
+        eventIds,
+        pageIds: limitedPageIds,
+        droppedPageIds: Math.max(pageIds.length - limitedPageIds.length, 0),
+      },
+    });
+
+    try {
+      if (limitedPageIds.length && process.env.NOTION_TOKEN) {
+        await syncNotionEntitiesByIds(limitedPageIds);
+        for (const id of limitedPageIds) {
+          try {
+            await mirrorTodoistFromNotion(id);
+          } catch (e) {
+            await logAudit({
+              source: "webhook-notion",
+              op: "mirror_error",
+              payload: { id, fingerprint, eventId: eventIds[0] ?? null },
+              error: (e as Error).message,
+            });
+          }
+        }
+        await logAudit({
+          source: "webhook-notion",
+          op: "incremental",
+          payload: { pageIds: limitedPageIds, fingerprint, eventId: eventIds[0] ?? null },
+        });
+      } else {
+        await syncNotion();
+        await logAudit({
+          source: "webhook-notion",
+          op: limitedPageIds.length ? "full_sync_no_token" : "full_sync_fallback",
+          payload: { pageIds: limitedPageIds, fingerprint, eventId: eventIds[0] ?? null },
+        });
+      }
+    } catch (e) {
+      const err = (e as Error).message;
+      await logAudit({
+        source: "webhook-notion",
+        op: "incremental_error",
+        payload: { fingerprint, eventId: eventIds[0] ?? null },
+        error: err,
+      });
+      try {
+        await syncNotion();
+        await logAudit({
+          source: "webhook-notion",
+          op: "full_sync_recover",
+          payload: { fingerprint, eventId: eventIds[0] ?? null },
+        });
+      } catch (e2) {
+        await logAudit({
+          source: "webhook-notion",
+          op: "full_sync_failed",
+          payload: { fingerprint, eventId: eventIds[0] ?? null },
+          error: (e2 as Error).message,
+        });
+      }
+    }
+  });
 }

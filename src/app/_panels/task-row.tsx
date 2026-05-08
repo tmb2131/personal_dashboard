@@ -35,7 +35,11 @@ export function TaskRow({
   const canToggle = Boolean(t.notionPageId || t.todoistTaskId);
 
   const showTodoist = t.source === "notion" && Boolean(t.notionPageId) && !t.todoistTaskId;
-  const showNotion = t.source === "todoist" && Boolean(t.todoistTaskId) && !t.notionPageId;
+  const showNotion =
+    t.source === "todoist" &&
+    Boolean(t.todoistTaskId) &&
+    !t.notionPageId &&
+    !t.hasRecurringTag;
 
   const handleClick = () => {
     if (!canToggle) return;

@@ -27,6 +27,10 @@ function calendarClientFromAccessToken(accessToken: string): calendar_v3.Calenda
   return google.calendar({ version: "v3", auth });
 }
 
+export function getCalendarClientFromAccessToken(accessToken: string): calendar_v3.Calendar {
+  return calendarClientFromAccessToken(accessToken);
+}
+
 /** OAuth2 client using long-lived refresh token (cron + watch without user session). */
 export function getOAuth2WithRefreshToken() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -306,6 +310,26 @@ export async function syncGcalIncrementalForCalendar(
     });
     return { mode: "full_after_410" as const, upserted: n };
   }
+}
+
+export async function syncGcalIncrementalAll(
+  cal: calendar_v3.Calendar,
+  now = new Date(),
+) {
+  const calendars = calendarIds();
+  const results = await Promise.all(
+    calendars.map(async (calendarId) => ({
+      calendarId,
+      ...(await syncGcalIncrementalForCalendar(cal, calendarId, now)),
+    })),
+  );
+  const changedCalendars = results.filter((r) => r.upserted > 0).map((r) => r.calendarId);
+  return {
+    calendars: calendars.length,
+    changed: changedCalendars.length > 0,
+    changedCalendars,
+    results,
+  };
 }
 
 export async function syncGcal(getAccessToken: AccessTokenSource) {

@@ -10,6 +10,11 @@ type TodoistAutoSyncResponse = {
   changed?: boolean;
 };
 
+type GcalAutoSyncResponse = {
+  ok?: boolean;
+  changed?: boolean;
+};
+
 export function AutoTodoistSync() {
   const router = useRouter();
   const inFlight = useRef(false);
@@ -18,13 +23,25 @@ export function AutoTodoistSync() {
     if (inFlight.current || document.visibilityState !== "visible") return;
     inFlight.current = true;
     try {
-      const res = await fetch("/api/sync/todoist", {
-        method: "POST",
-        cache: "no-store",
-      });
-      if (res.status === 401) return;
-      const body = (await res.json().catch(() => ({}))) as TodoistAutoSyncResponse;
-      if (res.ok && body.ok && body.changed) router.refresh();
+      const [todoistRes, gcalRes] = await Promise.all([
+        fetch("/api/sync/todoist", {
+          method: "POST",
+          cache: "no-store",
+        }),
+        fetch("/api/sync/gcal", {
+          method: "POST",
+          cache: "no-store",
+        }),
+      ]);
+      if (todoistRes.status === 401 || gcalRes.status === 401) return;
+      const todoistBody = (await todoistRes.json().catch(() => ({}))) as TodoistAutoSyncResponse;
+      const gcalBody = (await gcalRes.json().catch(() => ({}))) as GcalAutoSyncResponse;
+      if (
+        (todoistRes.ok && todoistBody.ok && todoistBody.changed) ||
+        (gcalRes.ok && gcalBody.ok && gcalBody.changed)
+      ) {
+        router.refresh();
+      }
     } finally {
       inFlight.current = false;
     }

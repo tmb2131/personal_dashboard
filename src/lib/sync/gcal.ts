@@ -1,5 +1,5 @@
 import { google, type calendar_v3 } from "googleapis";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, lte, notInArray, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, schema } from "@/lib/db";
 import { parseDateOnlyLocal } from "@/lib/date-utils";
@@ -177,6 +177,7 @@ async function syncCalendarWindow(
   let pageToken: string | undefined;
   let total = 0;
   let lastNextSyncToken: string | null | undefined;
+  const seenEventIds = new Set<string>();
 
   do {
     const resp = await cal.events.list({
@@ -189,6 +190,9 @@ async function syncCalendarWindow(
       pageToken,
     });
     if (resp.data.items?.length) {
+      for (const e of resp.data.items) {
+        if (e.id) seenEventIds.add(e.id);
+      }
       const rows = resp.data.items
         .map((e) => eventToRow(calendarId, e, now))
         .filter((r): r is NonNullable<typeof r> => Boolean(r));
@@ -198,6 +202,21 @@ async function syncCalendarWindow(
     lastNextSyncToken = resp.data.nextSyncToken;
     pageToken = resp.data.nextPageToken ?? undefined;
   } while (pageToken);
+
+  // Window sync is authoritative for the queried date range:
+  // remove local rows that no longer exist remotely.
+  const windowFilter = and(
+    eq(schema.gcalEvents.calendarId, calendarId),
+    gte(schema.gcalEvents.start, timeMin),
+    lte(schema.gcalEvents.start, timeMax),
+  );
+  if (seenEventIds.size === 0) {
+    await db.delete(schema.gcalEvents).where(windowFilter);
+  } else {
+    await db
+      .delete(schema.gcalEvents)
+      .where(and(windowFilter, notInArray(schema.gcalEvents.eventId, [...seenEventIds])));
+  }
 
   if (lastNextSyncToken) await persistNextSyncToken(sourceKey, lastNextSyncToken);
 

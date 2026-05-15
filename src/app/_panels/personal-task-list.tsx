@@ -86,8 +86,8 @@ function PersonalTaskRow({
               {canReschedule && (
                 <div
                   className={cn(
-                    "flex shrink-0 items-center gap-1 text-[10px] text-fg-subtle opacity-0 transition-opacity duration-150 ease-out motion-reduce:duration-0",
-                    "group-hover:opacity-100 focus-within:opacity-100",
+                    "hidden shrink-0 items-center gap-1 text-[10px] text-fg-subtle",
+                    "md:group-hover:flex md:focus-within:flex",
                   )}
                 >
                   {RESCHEDULE_PRESETS.map((preset) => (
@@ -115,6 +115,19 @@ function PersonalTaskRow({
                 </span>
               )}
             </div>
+            {canReschedule && (
+              <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-fg-subtle md:hidden">
+                {RESCHEDULE_PRESETS.map((preset) => (
+                  <RescheduleChip
+                    key={preset.key}
+                    label={preset.label}
+                    onClick={() => reschedule(preset.days, preset.hint)}
+                    disabled={pending}
+                    title={preset.title}
+                  />
+                ))}
+              </div>
+            )}
             {context && (
               <div className={cn("mt-0.5 text-[11px] text-fg-subtle", done && "line-through")}>
                 {context}

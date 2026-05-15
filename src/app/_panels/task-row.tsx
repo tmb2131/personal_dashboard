@@ -139,8 +139,8 @@ export function TaskRow({
           {canReschedule && (
             <div
               className={cn(
-                "flex shrink-0 items-center gap-1 text-[10px] text-fg-subtle opacity-0 transition-opacity duration-150 ease-out motion-reduce:duration-0",
-                "group-hover:opacity-100 focus-within:opacity-100",
+                "hidden shrink-0 items-center gap-1 text-[10px] text-fg-subtle",
+                "md:group-hover:flex md:focus-within:flex",
               )}
             >
               {RESCHEDULE_PRESETS.map((preset) => (
@@ -168,6 +168,19 @@ export function TaskRow({
             </span>
           )}
         </div>
+        {canReschedule && (
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-fg-subtle md:hidden">
+            {RESCHEDULE_PRESETS.map((preset) => (
+              <RescheduleChip
+                key={preset.key}
+                label={preset.label}
+                onClick={() => reschedule(preset.days, preset.hint)}
+                disabled={pending}
+                title={preset.title}
+              />
+            ))}
+          </div>
+        )}
         {(t.estimateMinutes || t.projectTitle) && (
           <div
             className={cn(

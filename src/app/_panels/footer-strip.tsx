@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { loadStoredTheme, toggleTheme } from "@/lib/theme";
+import { isEditableTarget } from "@/lib/utils";
 import { ManualSyncButton } from "./manual-sync-button";
 import { ReconcileButton } from "./reconcile-button";
 import { useSyncStatus } from "./sync-status-context";
-
-type Theme = "dark" | "light";
+import { ThemeToggleButton } from "./theme-toggle-button";
 
 function relativeAgo(d: Date | null, now: Date): string {
   if (!d) return "never";
@@ -16,24 +17,6 @@ function relativeAgo(d: Date | null, now: Date): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
-}
-
-function applyTheme(theme: Theme) {
-  const html = document.documentElement;
-  html.classList.toggle("theme-dark", theme === "dark");
-  html.classList.toggle("theme-light", theme === "light");
-  window.localStorage.setItem("dashboard-theme", theme);
-}
-
-function currentTheme(): Theme {
-  const html = document.documentElement;
-  if (html.classList.contains("theme-dark")) return "dark";
-  if (html.classList.contains("theme-light")) return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function toggleTheme() {
-  applyTheme(currentTheme() === "dark" ? "light" : "dark");
 }
 
 export function FooterStrip({
@@ -51,10 +34,21 @@ export function FooterStrip({
   }, []);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("dashboard-theme");
-    if (stored === "dark" || stored === "light") {
-      applyTheme(stored);
-    }
+    loadStoredTheme();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isEditableTarget(e.target)) return;
+      if (e.key === "D") {
+        e.preventDefault();
+        toggleTheme();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const dateLabel = now.toLocaleDateString("en-GB", {
@@ -86,22 +80,10 @@ export function FooterStrip({
       </span>
       <span>·</span>
       <ShortcutsHint />
-      <ThemeToggle label="dark/light" onClick={toggleTheme} />
+      <ThemeToggleButton variant="label" />
 
       <span className="font-serif text-fg-muted italic sm:ml-auto">{dateLabel}</span>
     </footer>
-  );
-}
-
-function ThemeToggle({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-sm text-fg-subtle transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-    >
-      {label}
-    </button>
   );
 }
 

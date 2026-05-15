@@ -6,6 +6,7 @@ import type { DashboardMeta, SourceHealth } from "@/lib/dashboard-data";
 import { dotClassFor, formatAgo, freshnessFor } from "@/lib/freshness";
 import { ManualSyncButton } from "./manual-sync-button";
 import { useSyncStatus } from "./sync-status-context";
+import { ThemeToggleButton } from "./theme-toggle-button";
 import { useTodayRecurringTasksVisibility } from "./today-recurring-tasks-context";
 
 function pluralise(n: number, one: string, many: string) {
@@ -47,6 +48,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
         </div>
 
         <div className="flex shrink-0 items-center gap-2 pt-0.5 text-[13px] sm:hidden">
+          <ThemeToggleButton variant="icon" />
           <ManualSyncButton variant="icon" />
           <span className="tabular-nums text-fg-muted">{timeStr}</span>
         </div>

@@ -4,7 +4,13 @@ import { SectionHeader } from "./section-header";
 export function LifeAreas({ areas }: { areas: Project[] }) {
   return (
     <section id="life-areas" className="border-t border-border scroll-mt-6">
-      <SectionHeader eyebrow="Life Areas" title="" count={areas.length} source="notion" />
+      <SectionHeader
+        eyebrow="Life Areas"
+        title=""
+        count={areas.length}
+        source="notion"
+        sourceKey="notion"
+      />
 
       {areas.length === 0 ? (
         <div className="px-5 pb-5 text-[12px] text-fg-subtle">None marked</div>

@@ -145,7 +145,13 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
 
   return (
     <section id="next-3-days" className="border-t border-border scroll-mt-6">
-      <SectionHeader eyebrow="Next 3 Days" title="" count={total} source="google cal" />
+      <SectionHeader
+        eyebrow="Next 3 Days"
+        title=""
+        count={total}
+        source="google cal"
+        sourceKey="gcal"
+      />
 
       <div className="px-4 pb-4 sm:px-5">
         <div className="md:hidden">

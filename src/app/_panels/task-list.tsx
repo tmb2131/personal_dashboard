@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import type { Subtask } from "@/lib/dashboard-data";
+import { useDashboardMeta } from "./dashboard-meta-context";
+import { dispatchShortcut, EmptyState } from "./empty-state";
 import { SectionHeader } from "./section-header";
 import { TaskRow } from "./task-row";
 import { AddTaskRow } from "./add-task-row";
@@ -21,6 +23,7 @@ export function TaskList({
   splitMode?: SplitMode;
 }) {
   const { showRecurringTodayTasks, setShowRecurringTodayTasks } = useTodayRecurringTasksVisibility();
+  const meta = useDashboardMeta();
 
   const visibleTasks = useMemo(() => {
     const filtered =
@@ -41,10 +44,20 @@ export function TaskList({
   const isRecurringMode = splitMode === "recurring";
   const sectionId = isRecurringMode ? "today-recurring-tasks" : "today-tasks";
   const sectionTitle = isRecurringMode ? "Recurring" : "Tasks";
+  const allClear =
+    !isRecurringMode &&
+    tasks.length === 0 &&
+    (meta?.todayMeetingCount ?? 0) === 0;
 
   return (
     <section id={sectionId} className="border-t border-border scroll-mt-6">
-      <SectionHeader eyebrow="Today" title={sectionTitle} count={ratio} source={source}>
+      <SectionHeader
+        eyebrow="Today"
+        title={sectionTitle}
+        count={ratio}
+        source={source}
+        sourceKey="todoist"
+      >
         {!isRecurringMode && (
           <div className="flex cursor-default select-none items-center gap-2 text-[11px] text-fg-muted">
             <span className="max-w-[9rem] leading-snug normal-case tracking-normal">
@@ -78,30 +91,40 @@ export function TaskList({
       </SectionHeader>
 
       {isEmpty ? (
-        <div className="px-5 pb-2 text-[12px] text-fg-subtle">
-          {isRecurringMode ? (
-            "No recurring tasks for today."
-          ) : tasks.length === 0 ? (
-            <span className="font-serif italic text-fg-muted">Quiet day. Add one below.</span>
+        isRecurringMode ? (
+          <EmptyState message="No recurring tasks for today." />
+        ) : tasks.length === 0 ? (
+          allClear ? (
+            <EmptyState
+              message="All clear for today."
+              tone="positive"
+              cta={{
+                label: "Add something",
+                onClick: () => dispatchShortcut("new-task"),
+              }}
+            />
           ) : (
-            <>
-              No open tasks in this view.
-              {!showRecurringTodayTasks && (
-                <>
-                  {" "}
-                  <button
-                    type="button"
-                    onClick={() => setShowRecurringTodayTasks(true)}
-                    className="underline decoration-dotted underline-offset-2 hover:text-fg"
-                  >
-                    Show recurring tasks
-                  </button>
-                  ?
-                </>
-              )}
-            </>
-          )}
-        </div>
+            <EmptyState
+              message="Quiet day."
+              cta={{
+                label: "Quick-add a task",
+                onClick: () => dispatchShortcut("new-task"),
+              }}
+            />
+          )
+        ) : (
+          <EmptyState
+            message="No open tasks in this view."
+            cta={
+              !showRecurringTodayTasks
+                ? {
+                    label: "Show recurring tasks",
+                    onClick: () => setShowRecurringTodayTasks(true),
+                  }
+                : null
+            }
+          />
+        )
       ) : (
         <ul>
           {visibleTasks.map((t) => (

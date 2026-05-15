@@ -3,41 +3,13 @@
 import { useEffect, useState } from "react";
 import { cn, formatTimeWithSuffix } from "@/lib/utils";
 import type { DashboardMeta, SourceHealth } from "@/lib/dashboard-data";
+import { dotClassFor, formatAgo, freshnessFor } from "@/lib/freshness";
 import { ManualSyncButton } from "./manual-sync-button";
 import { useSyncStatus } from "./sync-status-context";
 import { useTodayRecurringTasksVisibility } from "./today-recurring-tasks-context";
 
 function pluralise(n: number, one: string, many: string) {
   return n === 1 ? `${n} ${one}` : `${n} ${many}`;
-}
-
-type Freshness = "fresh" | "recent" | "stale" | "unknown";
-
-function freshnessFor(health: SourceHealth, now: Date): Freshness {
-  if (!health.lastSyncAt) return "unknown";
-  const minutes = (now.getTime() - health.lastSyncAt.getTime()) / 60_000;
-  if (minutes < 5) return "fresh";
-  if (minutes < 30) return "recent";
-  return "stale";
-}
-
-function dotClassFor(freshness: Freshness, hasError: boolean): string {
-  if (hasError) return "bg-red-500";
-  if (freshness === "fresh") return "bg-done";
-  if (freshness === "recent") return "bg-done/60";
-  if (freshness === "stale") return "bg-amber-400/80";
-  return "bg-fg-subtle/40";
-}
-
-function formatAgo(d: Date | null, now: Date): string {
-  if (!d) return "never synced";
-  const ms = now.getTime() - d.getTime();
-  const m = Math.max(0, Math.floor(ms / 60_000));
-  if (m < 1) return "just synced";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialNow: Date }) {

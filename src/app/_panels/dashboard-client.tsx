@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { DashboardData } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 import { AutoTodoistSync } from "./auto-todoist-sync";
+import { DashboardMetaProvider } from "./dashboard-meta-context";
 import {
   DashboardViewProvider,
   useDashboardView,
@@ -16,6 +17,7 @@ import { LifeAreas } from "./life-areas";
 import { Next3Days } from "./next-3-days";
 import { PersonalTaskList } from "./personal-task-list";
 import { Projects } from "./projects";
+import { ShortcutHelpOverlay } from "./shortcut-help-overlay";
 import { SyncStatusProvider } from "./sync-status-context";
 import { TaskList } from "./task-list";
 import {
@@ -128,6 +130,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
       </div>
 
       <FooterStrip initialNow={data.now} lastSyncAt={data.lastSyncAt} />
+      <ShortcutHelpOverlay />
     </main>
   );
 }
@@ -135,12 +138,14 @@ function DashboardBody({ data }: { data: DashboardData }) {
 export function DashboardClient({ data }: { data: DashboardData }) {
   return (
     <SyncStatusProvider>
-      <TodayRecurringTasksProvider>
-        <AutoTodoistSync />
-        <DashboardViewProvider>
-          <DashboardBody data={data} />
-        </DashboardViewProvider>
-      </TodayRecurringTasksProvider>
+      <DashboardMetaProvider meta={data.meta}>
+        <TodayRecurringTasksProvider>
+          <AutoTodoistSync />
+          <DashboardViewProvider>
+            <DashboardBody data={data} />
+          </DashboardViewProvider>
+        </TodayRecurringTasksProvider>
+      </DashboardMetaProvider>
     </SyncStatusProvider>
   );
 }

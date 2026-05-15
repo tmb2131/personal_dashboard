@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { createTripAction, setTripDatesAction } from "@/app/actions";
 import type { Project } from "@/lib/dashboard-data";
 import { formatDateOnlyLocal, parseDateOnlyLocal } from "@/lib/date-utils";
+import { EmptyState } from "./empty-state";
 import { ProjectSubtaskPlanner } from "./project-subtask-planner";
 import { SectionHeader } from "./section-header";
 
@@ -370,15 +371,18 @@ export function UpcomingTrips({
   const isEmpty = trips.length === 0;
   return (
     <section id={sectionId} className="scroll-mt-6 border-t border-border">
-      <SectionHeader eyebrow={eyebrow} title="" count={trips.length} source="notion" />
+      <SectionHeader
+        eyebrow={eyebrow}
+        title=""
+        count={trips.length}
+        source="notion"
+        sourceKey="notion"
+      />
 
       {showAdd ? <AddTripRow autoOpen={isEmpty} /> : null}
 
       {isEmpty ? (
-        <div className="px-5 pb-5 text-[12px]">
-          <span className="font-serif italic text-fg-muted">{emptyCopy}.</span>
-          {showAdd && <span className="text-fg-subtle"> Sketch one above.</span>}
-        </div>
+        <EmptyState message={`${emptyCopy}.`} />
       ) : (
         <ul>
           {trips.map((trip) => (

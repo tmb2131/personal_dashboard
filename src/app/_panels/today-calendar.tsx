@@ -1,6 +1,9 @@
 import { cn, formatTimeWithSuffix } from "@/lib/utils";
 import type { CalendarEvent } from "@/lib/dashboard-data";
+import { extractCalendarHtmlLink, extractMeetingUrl } from "@/lib/meeting-url";
 import { SectionHeader } from "./section-header";
+
+const GCAL_DAY_URL = "https://calendar.google.com/calendar/u/0/r/day";
 
 const HOUR_PX = 28;
 const START_HOUR = 7;
@@ -87,30 +90,70 @@ export function TodayCalendar({
               ((end.getTime() - start.getTime()) / 3600000) * HOUR_PX - 2,
             );
             const showRange = (end.getTime() - start.getTime()) / 60_000 >= 60;
-            return (
-              <div
-                key={e.id}
-                className={cn(
-                  "absolute left-9 right-0 z-10 rounded border bg-bg-elevated px-2 py-1 text-[12px] leading-tight",
-                  "border-border-strong transition-shadow duration-200 ease-out motion-reduce:duration-0 hover:z-20 hover:shadow-sm",
-                )}
-                style={{ top, height }}
-                title={e.summary ?? ""}
-              >
-                <div className="truncate text-fg">{e.summary ?? "(no title)"}</div>
+            const meetingUrl = extractMeetingUrl(e);
+            const calendarUrl = extractCalendarHtmlLink(e);
+            const href = meetingUrl ?? calendarUrl;
+            const cardClass = cn(
+              "absolute left-9 right-0 z-10 rounded border bg-bg-elevated px-2 py-1 text-[12px] leading-tight",
+              "border-border-strong transition-shadow duration-200 ease-out motion-reduce:duration-0 hover:z-20 hover:shadow-sm",
+              href && "cursor-pointer hover:border-fg-muted",
+            );
+            const inner = (
+              <>
+                <div className="flex items-baseline gap-1 truncate text-fg">
+                  <span className="truncate">{e.summary ?? "(no title)"}</span>
+                  {meetingUrl && (
+                    <span aria-hidden className="shrink-0 text-[10px] text-accent">↗</span>
+                  )}
+                </div>
                 {showRange && (
                   <div className="truncate text-[10px] text-fg-subtle tabular-nums">
                     {formatTimeWithSuffix(start)}–{formatTimeWithSuffix(end)}
                     {e.location ? ` · ${e.location}` : ""}
                   </div>
                 )}
+              </>
+            );
+            const titleAttr = meetingUrl
+              ? `Join meeting · ${e.summary ?? ""}`
+              : calendarUrl
+              ? `Open in Google Calendar · ${e.summary ?? ""}`
+              : e.summary ?? "";
+            return href ? (
+              <a
+                key={e.id}
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className={cardClass}
+                style={{ top, height }}
+                title={titleAttr}
+              >
+                {inner}
+              </a>
+            ) : (
+              <div
+                key={e.id}
+                className={cardClass}
+                style={{ top, height }}
+                title={titleAttr}
+              >
+                {inner}
               </div>
             );
           })}
 
           {todayEvents.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-subtle">
-              No events today
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-[12px]">
+              <span className="font-serif italic text-fg-muted">A clear schedule.</span>
+              <a
+                href={GCAL_DAY_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-fg-subtle underline decoration-dotted underline-offset-2 hover:text-fg"
+              >
+                Open Google Calendar →
+              </a>
             </div>
           )}
         </div>

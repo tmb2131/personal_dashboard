@@ -79,11 +79,28 @@ export function TaskList({
 
       {isEmpty ? (
         <div className="px-5 pb-2 text-[12px] text-fg-subtle">
-          {isRecurringMode
-            ? "No recurring tasks for today."
-            : tasks.length === 0
-            ? "Nothing due. Quiet day."
-            : "No open tasks in this view. Toggle recurring tasks to check if any are hidden, or you're all caught up."}
+          {isRecurringMode ? (
+            "No recurring tasks for today."
+          ) : tasks.length === 0 ? (
+            <span className="font-serif italic text-fg-muted">Quiet day. Add one below.</span>
+          ) : (
+            <>
+              No open tasks in this view.
+              {!showRecurringTodayTasks && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => setShowRecurringTodayTasks(true)}
+                    className="underline decoration-dotted underline-offset-2 hover:text-fg"
+                  >
+                    Show recurring tasks
+                  </button>
+                  ?
+                </>
+              )}
+            </>
+          )}
         </div>
       ) : (
         <ul>
@@ -93,7 +110,12 @@ export function TaskList({
         </ul>
       )}
 
-      {!isRecurringMode && <AddTaskRow notionProjectPicklist={notionProjectPicklist} />}
+      {!isRecurringMode && (
+        <AddTaskRow
+          notionProjectPicklist={notionProjectPicklist}
+          autoOpen={tasks.length === 0}
+        />
+      )}
     </section>
   );
 }

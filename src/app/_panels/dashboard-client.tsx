@@ -16,6 +16,7 @@ import { LifeAreas } from "./life-areas";
 import { Next3Days } from "./next-3-days";
 import { PersonalTaskList } from "./personal-task-list";
 import { Projects } from "./projects";
+import { SyncStatusProvider } from "./sync-status-context";
 import { TaskList } from "./task-list";
 import {
   TodayRecurringTasksProvider,
@@ -133,11 +134,13 @@ function DashboardBody({ data }: { data: DashboardData }) {
 
 export function DashboardClient({ data }: { data: DashboardData }) {
   return (
-    <TodayRecurringTasksProvider>
-      <AutoTodoistSync />
-      <DashboardViewProvider>
-        <DashboardBody data={data} />
-      </DashboardViewProvider>
-    </TodayRecurringTasksProvider>
+    <SyncStatusProvider>
+      <TodayRecurringTasksProvider>
+        <AutoTodoistSync />
+        <DashboardViewProvider>
+          <DashboardBody data={data} />
+        </DashboardViewProvider>
+      </TodayRecurringTasksProvider>
+    </SyncStatusProvider>
   );
 }

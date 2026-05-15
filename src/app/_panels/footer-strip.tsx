@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ManualSyncButton } from "./manual-sync-button";
 import { ReconcileButton } from "./reconcile-button";
+import { useSyncStatus } from "./sync-status-context";
 
 type Theme = "dark" | "light";
 
@@ -43,6 +44,7 @@ export function FooterStrip({
   lastSyncAt: Date | null;
 }) {
   const [now, setNow] = useState<Date>(new Date(initialNow));
+  const { inFlight } = useSyncStatus();
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(i);
@@ -67,8 +69,17 @@ export function FooterStrip({
       className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-[11px] text-fg-subtle sm:px-8"
     >
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span>
-          Synced <span className="tabular-nums">{relativeAgo(lastSyncAt, now)}</span>
+        <span aria-live="polite">
+          {inFlight ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent motion-safe:animate-pulse" />
+              Syncing…
+            </span>
+          ) : (
+            <>
+              Synced <span className="tabular-nums">{relativeAgo(lastSyncAt, now)}</span>
+            </>
+          )}
         </span>
         <ManualSyncButton size="sm" />
         <ReconcileButton />

@@ -39,9 +39,9 @@ function tripDatesRangeError(startVal: string, endVal: string): string | null {
   return null;
 }
 
-function AddTripRow() {
+function AddTripRow({ autoOpen = false }: { autoOpen?: boolean }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [title, setTitle] = useState("");
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
@@ -367,14 +367,18 @@ export function UpcomingTrips({
   emptyCopy?: string;
   showAdd?: boolean;
 }) {
+  const isEmpty = trips.length === 0;
   return (
     <section id={sectionId} className="scroll-mt-6 border-t border-border">
       <SectionHeader eyebrow={eyebrow} title="" count={trips.length} source="notion" />
 
-      {showAdd ? <AddTripRow /> : null}
+      {showAdd ? <AddTripRow autoOpen={isEmpty} /> : null}
 
-      {trips.length === 0 ? (
-        <div className="px-5 pb-5 text-[12px] text-fg-subtle">{emptyCopy}</div>
+      {isEmpty ? (
+        <div className="px-5 pb-5 text-[12px]">
+          <span className="font-serif italic text-fg-muted">{emptyCopy}.</span>
+          {showAdd && <span className="text-fg-subtle"> Sketch one above.</span>}
+        </div>
       ) : (
         <ul>
           {trips.map((trip) => (

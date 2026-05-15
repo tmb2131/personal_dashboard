@@ -5,6 +5,8 @@ import { formatTimeWithSuffix } from "@/lib/utils";
 import type { DayGroupedEvents } from "@/lib/dashboard-data";
 import { SectionHeader } from "./section-header";
 
+const GCAL_DAY_URL = "https://calendar.google.com/calendar/u/0/r/day";
+
 const OWNER_DOT = {
   thomas: "#D98783",
   sriya: "#DCC35A",
@@ -64,18 +66,50 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
       </div>
 
       {g.events.length === 0 ? (
-        <div className="text-[11px] text-fg-subtle">No events</div>
+        <div className="flex items-baseline gap-2 text-[11px]">
+          <span className="font-serif italic text-fg-muted">Clear day.</span>
+          <a
+            href={GCAL_DAY_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-fg-subtle underline decoration-dotted underline-offset-2 hover:text-fg"
+          >
+            Open Google Calendar →
+          </a>
+        </div>
       ) : (
         <ul className="space-y-1">
           {g.events.map((e) => {
             const start = e.start ? new Date(e.start) : null;
             const loc = locationFor(e);
+            const href = e.meetingUrl ?? e.htmlLink;
+            const title = e.meetingUrl
+              ? `Join meeting · ${e.summary ?? ""}`
+              : e.htmlLink
+              ? `Open in Google Calendar · ${e.summary ?? ""}`
+              : e.summary ?? "";
+            const summaryNode = href ? (
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                title={title}
+                className="min-w-0 flex-1 break-words underline-offset-2 hover:underline"
+              >
+                {e.summary ?? "(no title)"}
+                {e.meetingUrl && (
+                  <span aria-hidden className="ml-1 text-[10px] text-accent">↗</span>
+                )}
+              </a>
+            ) : (
+              <span className="min-w-0 flex-1 break-words">{e.summary ?? "(no title)"}</span>
+            );
             return (
               <li key={e.id} className="flex items-baseline gap-1.5 text-[12px]">
                 <span className="w-9 shrink-0 tabular-nums text-fg-muted">
                   {start ? formatTimeWithSuffix(start) : ""}
                 </span>
-                <span className="min-w-0 flex-1 break-words">{e.summary ?? "(no title)"}</span>
+                {summaryNode}
                 {loc && (
                   <span className="hidden max-w-[8rem] shrink-0 truncate text-[10px] text-fg-subtle xl:inline">
                     {loc}

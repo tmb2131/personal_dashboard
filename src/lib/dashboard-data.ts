@@ -3,6 +3,7 @@ import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
 import { parseDateOnlyLocal } from "@/lib/date-utils";
+import { extractMeetingUrl } from "@/lib/meeting-url";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
 export type NotionPage = InferSelectModel<typeof schema.notionPages>;
@@ -31,6 +32,8 @@ export type Next3DaysEvent = {
   start: CalendarEvent["start"];
   end: CalendarEvent["end"];
   allDay: CalendarEvent["allDay"];
+  meetingUrl: string | null;
+  htmlLink: string | null;
 };
 
 export type Subtask = {
@@ -88,6 +91,12 @@ export type DayGroupedEvents = {
   events: Next3DaysEvent[];
 };
 
+export type SourceKey = "notion" | "todoist" | "gcal";
+
+export type SourceHealth = {
+  lastSyncAt: Date | null;
+};
+
 export type DashboardMeta = {
   /** Open tasks due today excluding Recurring project-folder tasks (default overview) */
   todayOpenCount: number;
@@ -95,6 +104,7 @@ export type DashboardMeta = {
   todayOpenRecurringCount: number;
   todayMeetingCount: number;
   nextEvent: { summary: string; start: Date } | null;
+  sources: Record<SourceKey, SourceHealth>;
 };
 
 export type DashboardData = {
@@ -292,6 +302,21 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     .map((s) => s.lastIncrementalAt ?? s.lastFullSyncAt)
     .filter((d): d is Date => Boolean(d))
     .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+
+  function pickSyncFor(predicate: (source: string) => boolean): Date | null {
+    return (
+      syncRows
+        .filter((s) => predicate(s.source))
+        .map((s) => s.lastIncrementalAt ?? s.lastFullSyncAt)
+        .filter((d): d is Date => Boolean(d))
+        .sort((a, b) => b.getTime() - a.getTime())[0] ?? null
+    );
+  }
+  const sources: DashboardMeta["sources"] = {
+    notion: { lastSyncAt: pickSyncFor((s) => s === "notion") },
+    todoist: { lastSyncAt: pickSyncFor((s) => s === "todoist") },
+    gcal: { lastSyncAt: pickSyncFor((s) => s === "gcal" || s.startsWith("gcal:")) },
+  };
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const todoistProjectById = new Map(todoistProjects.map((p) => [p.id, p]));
@@ -587,6 +612,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     summary: string | null;
     location: string | null;
     calendarIds: Set<string>;
+    meetingUrl: string | null;
+    htmlLink: string | null;
   };
 
   const bucketsByKey = new Set(buckets.map((b) => b.key));
@@ -616,6 +643,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       summary: e.summary ?? null,
       location: e.location ?? null,
       calendarIds: new Set([e.calendarId.toLowerCase()]),
+      meetingUrl: extractMeetingUrl({ raw: e.raw, location: e.location ?? null }),
+      htmlLink: e.htmlLink ?? null,
     });
     mergedByBucket.set(dayKey, bucketMap);
   }
@@ -635,6 +664,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         start: entry.start,
         end: entry.end,
         allDay: entry.allDay,
+        meetingUrl: entry.meetingUrl,
+        htmlLink: entry.htmlLink,
       };
     });
 
@@ -713,6 +744,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     nextEvent: nextEvt && nextEvt.start
       ? { summary: nextEvt.summary ?? "(untitled)", start: new Date(nextEvt.start) }
       : null,
+    sources,
   };
 
   const isEmpty = events.length === 0 && pages.length === 0 && tasks.length === 0;

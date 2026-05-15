@@ -11,6 +11,7 @@ import {
 } from "@/lib/date-utils";
 import { db, schema } from "@/lib/db";
 import { extractProject } from "@/lib/quick-add";
+import { isTravelEventsCategory } from "@/lib/utils";
 import { logAudit } from "@/lib/sync/audit";
 import {
   applyDashboardToggle,
@@ -26,6 +27,7 @@ import {
   updateNotionFocus,
   updateNotionProjectSubtask,
   updateNotionTaskDate,
+  updateNotionTripDates,
   updateNotionTodoStatus,
 } from "@/lib/sync/notion";
 import { reconcileAllLinks, type ReconcileSummary } from "@/lib/sync/reconcile";
@@ -287,6 +289,26 @@ async function patchNotionDueCache(pageId: string, due: DueInput) {
       updatedAt: new Date(),
     })
     .where(eq(schema.notionPages.id, pageId));
+}
+
+async function patchNotionTripDatesCache(
+  pageId: string,
+  dates: { dateStart: Date | null; dateEnd: Date | null },
+) {
+  await db
+    .update(schema.notionPages)
+    .set({
+      dateStart: dates.dateStart,
+      dateEnd: dates.dateEnd,
+      dateIsDatetime: false,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.notionPages.id, pageId));
+}
+
+function normalizeOptionalYyyyMmDd(value: string | null | undefined): string | null {
+  const t = value?.trim() ?? "";
+  return t || null;
 }
 
 async function resolveDueTaskLink(args: {
@@ -645,6 +667,96 @@ export async function createProjectAction(args: {
     await logAudit({
       source: "dashboard",
       op: "create_project_error",
+      payload: args,
+      error: (e as Error).message,
+    });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function createTripAction(args: {
+  title: string;
+  dateStart: string | null;
+  dateEnd: string | null;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.title.trim()) return { ok: false, error: "Trip title is required" };
+
+  const dateStart = normalizeOptionalYyyyMmDd(args.dateStart);
+  const dateEnd = normalizeOptionalYyyyMmDd(args.dateEnd);
+  if (dateEnd && !dateStart) return { ok: false, error: "End date requires a start date" };
+  if (dateStart && dateEnd) {
+    const a = parseDateOnlyLocalStrict(dateStart);
+    const b = parseDateOnlyLocalStrict(dateEnd);
+    if (b.getTime() < a.getTime()) {
+      return { ok: false, error: "End date must be on or after start date" };
+    }
+  }
+
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    const categories = await db.select().from(schema.notionCategories);
+    const travel = categories.find((c) => isTravelEventsCategory(c.title));
+    if (!travel) return { ok: false, error: "Travel/Events category not found" };
+
+    await createNotionProject({
+      title: args.title.trim(),
+      categoryId: travel.id,
+      focus: "No",
+      dateStart,
+      dateEnd,
+    });
+    await logAudit({ source: "dashboard", op: "create_trip", payload: args });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "create_trip_error",
+      payload: args,
+      error: (e as Error).message,
+    });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function setTripDatesAction(args: {
+  notionPageId: string;
+  dateStart: string | null;
+  dateEnd: string | null;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionPageId?.trim()) return { ok: false, error: "Missing Notion page" };
+
+  const dateStart = normalizeOptionalYyyyMmDd(args.dateStart);
+  const dateEnd = normalizeOptionalYyyyMmDd(args.dateEnd);
+  if (dateEnd && !dateStart) return { ok: false, error: "End date requires a start date" };
+  if (dateStart && dateEnd) {
+    const a = parseDateOnlyLocalStrict(dateStart);
+    const b = parseDateOnlyLocalStrict(dateEnd);
+    if (b.getTime() < a.getTime()) {
+      return { ok: false, error: "End date must be on or after start date" };
+    }
+  }
+
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    await updateNotionTripDates(args.notionPageId, { dateStart, dateEnd });
+
+    await patchNotionTripDatesCache(args.notionPageId, {
+      dateStart: dateStart ? parseDateOnlyLocalStrict(dateStart) : null,
+      dateEnd: dateEnd ? parseDateOnlyLocalStrict(dateEnd) : null,
+    });
+
+    await logAudit({ source: "dashboard", op: "set_trip_dates", payload: args });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "set_trip_dates_error",
       payload: args,
       error: (e as Error).message,
     });

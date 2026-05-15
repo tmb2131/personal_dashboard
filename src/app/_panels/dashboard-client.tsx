@@ -108,7 +108,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
         </View>
 
         <View show={["dashboard", "trips"]} className="min-w-0">
-          <UpcomingTrips trips={data.upcomingTrips} now={data.now} />
+          <UpcomingTrips trips={data.upcomingTrips} now={data.now} showAdd />
           <View show={["dashboard"]}>
             <LifeAreas areas={data.lifeAreas} />
           </View>
@@ -121,6 +121,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
             eyebrow="No date"
             sectionId="undated-trips"
             emptyCopy="No undated trip ideas"
+            showAdd
           />
         </View>
       </div>

@@ -356,13 +356,37 @@ export async function updateNotionTaskDate(
   pageId: string,
   date: { dueDate: string; dueTime?: string | null } | null,
 ) {
-  let dateProp: { start: string } | null = null;
+  let dateProp: { start: string; end?: string } | null = null;
   if (date) {
     const parsed = date.dueTime
       ? parseDateTimeLocal(date.dueDate, date.dueTime)
       : parseDateOnlyInput(date.dueDate);
     if (!parsed || Number.isNaN(parsed.getTime())) throw new Error("Invalid date");
     dateProp = formatNotionDateProp(parsed, Boolean(date.dueTime));
+  }
+
+  await client().pages.update({
+    page_id: pageId,
+    properties: {
+      Date: { date: dateProp },
+    },
+  });
+}
+
+/** Date-only project/trip `Date` property (not task due date/datetime). */
+export async function updateNotionTripDates(
+  pageId: string,
+  args: { dateStart: string | null; dateEnd: string | null },
+) {
+  const startRaw = args.dateStart?.trim() ?? "";
+  const endRaw = args.dateEnd?.trim() ?? "";
+  if (endRaw && !startRaw) throw new Error("End date requires a start date");
+
+  let dateProp: { start: string; end?: string } | null = null;
+  if (startRaw) {
+    const start = parseDateOnlyInput(startRaw);
+    const end = endRaw ? parseDateOnlyInput(endRaw) : null;
+    dateProp = formatNotionDateProp(start, false, end);
   }
 
   await client().pages.update({
@@ -422,11 +446,18 @@ export async function createNotionProject(input: {
   title: string;
   categoryId: string | null;
   focus: "Yes" | "No";
+  /** `yyyy-mm-dd`; ignored unless set. */
+  dateStart?: string | null;
+  dateEnd?: string | null;
 }): Promise<{ pageId: string }> {
   if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
   if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
   const title = input.title.trim();
   if (!title) throw new Error("Project title is required");
+
+  const dateStartRaw = input.dateStart?.trim() ?? "";
+  const dateEndRaw = input.dateEnd?.trim() ?? "";
+  if (dateEndRaw && !dateStartRaw) throw new Error("End date requires a start date");
 
   const titleKey = await getTodosTitlePropertyName();
   const properties: Record<string, unknown> = {
@@ -439,6 +470,12 @@ export async function createNotionProject(input: {
 
   if (input.categoryId) {
     properties.Category = { relation: [{ id: input.categoryId }] };
+  }
+
+  if (dateStartRaw) {
+    const start = parseDateOnlyInput(dateStartRaw);
+    const end = dateEndRaw ? parseDateOnlyInput(dateEndRaw) : null;
+    properties.Date = { date: formatNotionDateProp(start, false, end) };
   }
 
   const created = await client().pages.create({
@@ -459,12 +496,23 @@ type DataSourceObjectResponse = {
   properties: Record<string, { type?: string; [k: string]: unknown }>;
 };
 
-function formatNotionDateProp(d: Date, isDatetime: boolean): { start: string } {
+function formatNotionDateProp(
+  d: Date,
+  isDatetime: boolean,
+  end?: Date | null,
+): { start: string; end?: string } {
   if (isDatetime) return { start: d.toISOString() };
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return { start: `${y}-${m}-${day}` };
+  const start = `${y}-${m}-${day}`;
+  if (end != null) {
+    const ey = end.getFullYear();
+    const em = String(end.getMonth() + 1).padStart(2, "0");
+    const eday = String(end.getDate()).padStart(2, "0");
+    return { start, end: `${ey}-${em}-${eday}` };
+  }
+  return { start };
 }
 
 function formatRichTextProp(text: string | null): { rich_text: { type: "text"; text: { content: string } }[] } {

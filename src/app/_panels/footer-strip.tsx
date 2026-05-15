@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ManualSyncButton } from "./manual-sync-button";
+import { ReconcileButton } from "./reconcile-button";
 
 type Theme = "dark" | "light";
 
@@ -70,6 +71,7 @@ export function FooterStrip({
           Synced <span className="tabular-nums">{relativeAgo(lastSyncAt, now)}</span>
         </span>
         <ManualSyncButton size="sm" />
+        <ReconcileButton />
       </span>
       <span>·</span>
       <KeyHint k="⌃⌘N" label="new task" />

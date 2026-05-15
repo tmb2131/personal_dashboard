@@ -2,7 +2,12 @@ import { Client } from "@notionhq/client";
 import { db, schema } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { parseDateOnlyLocalStrict, parseDateTimeLocal } from "@/lib/date-utils";
-import { notionStatusFromTodoist, PRIORITY_TODOIST_TO_NOTION, type TodoistTask } from "@/lib/sync/mappings";
+import {
+  notionStatusFromTodoist,
+  PRIORITY_TODOIST_TO_NOTION,
+  type NotionPage,
+  type TodoistTask,
+} from "@/lib/sync/mappings";
 
 const TODOS_DS = process.env.NOTION_TODOS_DATA_SOURCE_ID!;
 const CATEGORIES_DS = process.env.NOTION_CATEGORIES_DATA_SOURCE_ID!;
@@ -365,6 +370,51 @@ export async function updateNotionTaskDate(
     properties: {
       Date: { date: dateProp },
     },
+  });
+}
+
+export type NotionTodoFieldUpdate = {
+  title?: string;
+  status?: NotionPage["status"];
+  /** Pass `null` to clear the date. */
+  date?: { value: Date; isDatetime: boolean } | null;
+  /** Pass `null` to clear the priority select. */
+  priority?: NotionPage["priority"] | null;
+};
+
+/**
+ * Update a To-Dos page with any subset of the synced fields in a single Notion API call.
+ * Used by the orchestrator's Todoist→Notion mirror so all drifted fields land in one request.
+ */
+export async function updateNotionTodoFields(
+  pageId: string,
+  fields: NotionTodoFieldUpdate,
+): Promise<void> {
+  const properties: Record<string, unknown> = {};
+
+  if (fields.title !== undefined) {
+    const titleKey = await getTodosTitlePropertyName();
+    properties[titleKey] = {
+      title: [{ type: "text" as const, text: { content: fields.title } }],
+    };
+  }
+  if (fields.status !== undefined && fields.status !== null) {
+    properties.Status = { status: { name: fields.status } };
+  }
+  if (fields.date !== undefined) {
+    properties.Date = {
+      date: fields.date ? formatNotionDateProp(fields.date.value, fields.date.isDatetime) : null,
+    };
+  }
+  if (fields.priority !== undefined) {
+    properties.Priority = fields.priority ? { select: { name: fields.priority } } : { select: null };
+  }
+
+  if (Object.keys(properties).length === 0) return;
+
+  await client().pages.update({
+    page_id: pageId,
+    properties: properties as never,
   });
 }
 

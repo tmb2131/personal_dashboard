@@ -15,6 +15,8 @@ import { logAudit } from "@/lib/sync/audit";
 import {
   applyDashboardToggle,
   insertTaskLinkForPair,
+  mirrorNotionFromTodoist,
+  mirrorTodoistFromNotion,
   refreshTaskLinkHash,
 } from "@/lib/sync/orchestrator";
 import { pushNotionPageToTodoist, pushTodoistTaskToNotion } from "@/lib/sync/cross-post";
@@ -26,6 +28,7 @@ import {
   updateNotionTaskDate,
   updateNotionTodoStatus,
 } from "@/lib/sync/notion";
+import { reconcileAllLinks, type ReconcileSummary } from "@/lib/sync/reconcile";
 import { getPersonalProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
 
 export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
@@ -454,7 +457,22 @@ export async function setTodoistTaskDueAction(args: {
       await patchNotionDueCache(notionPageId, due);
     }
 
-    if (link) await refreshTaskLinkHash(link.id);
+    // If the pair is linked, run a mirror to catch any other field drift in the same request.
+    // Picks the direction by whichever side we touched (or Notion when both sides hit).
+    if (link) {
+      try {
+        if (notionPageId) await mirrorTodoistFromNotion(notionPageId);
+        else if (todoistTaskId) await mirrorNotionFromTodoist(todoistTaskId);
+      } catch (e) {
+        await logAudit({
+          source: "dashboard",
+          op: "set_task_due_mirror_error",
+          payload: { todoistTaskId, notionPageId },
+          error: (e as Error).message,
+        });
+      }
+      await refreshTaskLinkHash(link.id);
+    }
     await logAudit({
       source: "dashboard",
       op: "set_task_due",
@@ -652,6 +670,26 @@ export async function setProjectStatusAction(args: {
       .update(schema.notionPages)
       .set({ status: args.status, updatedAt: new Date() })
       .where(eq(schema.notionPages.id, args.notionPageId));
+
+    // Push through to Todoist if this Notion page is linked. We don't rely on Notion's own
+    // webhook to round-trip the change — Vercel can drop async-after-200 work.
+    const [link] = await db
+      .select({ id: schema.taskLinks.id })
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
+    if (link && process.env.TODOIST_TOKEN) {
+      try {
+        await mirrorTodoistFromNotion(args.notionPageId);
+      } catch (e) {
+        await logAudit({
+          source: "dashboard",
+          op: "set_project_status_mirror_error",
+          payload: args,
+          error: (e as Error).message,
+        });
+      }
+    }
+
     await logAudit({
       source: "dashboard",
       op: "set_project_status",
@@ -665,6 +703,22 @@ export async function setProjectStatusAction(args: {
       payload: args,
       error: (e as Error).message,
     });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export type ReconcileResult =
+  | ({ ok: true } & ReconcileSummary)
+  | { ok: false; error: string };
+
+/** Manual "reconcile sync" trigger from the dashboard. */
+export async function reconcileSyncAction(): Promise<ReconcileResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  try {
+    const summary = await reconcileAllLinks();
+    return { ok: true, ...summary };
+  } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
 }

@@ -9,6 +9,7 @@ import {
   setProjectFocusAction,
   setProjectStatusAction,
 } from "../actions";
+import { EmptyState } from "./empty-state";
 import { ProjectSubtaskPlanner } from "./project-subtask-planner";
 import { SectionHeader } from "./section-header";
 
@@ -374,14 +375,31 @@ export function Projects({
 
   const emptyMessage =
     view === "focus"
-      ? "No focused projects"
+      ? "No focused projects."
       : view === "nonFocus"
-        ? "No non-focus projects"
-        : "No projects";
+        ? "No non-focus projects."
+        : "No projects yet.";
+
+  const emptyCta = (() => {
+    if (groups.all.length === 0) return null;
+    if (view === "focus" && groups.nonFocus.length > 0) {
+      return { label: "Show all projects", onClick: () => setView("all") };
+    }
+    if (view === "nonFocus" && groups.focus.length > 0) {
+      return { label: "Show focused", onClick: () => setView("focus") };
+    }
+    return null;
+  })();
 
   return (
     <section id="projects" className="border-t border-border scroll-mt-6">
-      <SectionHeader eyebrow="Projects" title="" count={groups.all.length} source="notion" />
+      <SectionHeader
+        eyebrow="Projects"
+        title=""
+        count={groups.all.length}
+        source="notion"
+        sourceKey="notion"
+      />
 
       <div className="flex flex-wrap items-center gap-1 px-5 pb-2">
         <button
@@ -411,10 +429,7 @@ export function Projects({
       </div>
 
       {list.length === 0 ? (
-        <div className="px-5 pb-2 text-[12px]">
-          <span className="font-serif italic text-fg-muted">{emptyMessage}.</span>{" "}
-          <span className="text-fg-subtle">Add one below.</span>
-        </div>
+        <EmptyState message={emptyMessage} cta={emptyCta} />
       ) : (
         <ul>
           {list.map((p) => (

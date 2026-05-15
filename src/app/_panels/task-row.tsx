@@ -1,24 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { categoryDot, cn } from "@/lib/utils";
+import { categoryDot, cn, isEditableTarget } from "@/lib/utils";
 import type { Subtask } from "@/lib/dashboard-data";
 import {
   pushNotionTaskToTodoistAction,
   pushTodoistTaskToNotionAction,
-  setTodoistTaskDueAction,
-  toggleTaskDoneAction,
 } from "../actions";
 import { TaskDetailExpansion } from "./task-detail-expansion";
-
-const UNDO_TIMEOUT_MS = 5_000;
-const MOVE_FEEDBACK_MS = 2_500;
-
-function toIsoDate(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+import { RESCHEDULE_PRESETS, useTaskRowActions } from "./use-task-row-actions";
 
 export function TaskRow({
   t,
@@ -28,30 +19,25 @@ export function TaskRow({
   notionProjectPicklist: { id: string; title: string }[];
 }) {
   const router = useRouter();
-  const [done, setDone] = useState(t.done);
-  const [lastSyncedDone, setLastSyncedDone] = useState(t.done);
-  if (t.done !== lastSyncedDone) {
-    // Parent re-rendered with fresh data; reconcile optimistic mirror.
-    setDone(t.done);
-    setLastSyncedDone(t.done);
-  }
-  const [pending, startTransition] = useTransition();
+  const {
+    done,
+    pending,
+    expanded,
+    setExpanded,
+    showUndo,
+    moveMessage,
+    moveError,
+    canToggle,
+    canReschedule,
+    toggleDone,
+    undoDone,
+    reschedule,
+  } = useTaskRowActions(t);
+
   const [crossPostError, setCrossPostError] = useState<string | null>(null);
   const [selectedParent, setSelectedParent] = useState("");
   const [showNotionProjectSelector, setShowNotionProjectSelector] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [showUndo, setShowUndo] = useState(false);
-  const [moveMessage, setMoveMessage] = useState<string | null>(null);
-  const [moveError, setMoveError] = useState<string | null>(null);
-  const undoTimerRef = useRef<number | null>(null);
-  const moveTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
-      if (moveTimerRef.current) window.clearTimeout(moveTimerRef.current);
-    };
-  }, []);
+  const [crossPostPending, startCrossPostTransition] = useTransition();
 
   const resolvedNotionParent =
     notionProjectPicklist.find((p) => p.id === selectedParent)?.id
@@ -59,8 +45,6 @@ export function TaskRow({
     ?? "";
 
   const dotColor = categoryDot(t.categoryTitle);
-  const canToggle = Boolean(t.notionPageId || t.todoistTaskId);
-  const canReschedule = !t.done && (Boolean(t.todoistTaskId) || Boolean(t.notionPageId));
 
   const showTodoist = t.source === "notion" && Boolean(t.notionPageId) && !t.todoistTaskId;
   const showNotion =
@@ -69,100 +53,11 @@ export function TaskRow({
     !t.notionPageId &&
     !t.hasRecurringTag;
 
-  const clearUndoTimer = () => {
-    if (undoTimerRef.current) {
-      window.clearTimeout(undoTimerRef.current);
-      undoTimerRef.current = null;
-    }
-  };
-
-  const clearMoveTimer = () => {
-    if (moveTimerRef.current) {
-      window.clearTimeout(moveTimerRef.current);
-      moveTimerRef.current = null;
-    }
-  };
-
-  const handleClick = () => {
-    if (!canToggle) return;
-    const next = !done;
-    setDone(next);
-    clearUndoTimer();
-    startTransition(async () => {
-      const result = await toggleTaskDoneAction({
-        notionPageId: t.notionPageId,
-        todoistTaskId: t.todoistTaskId,
-        done: next,
-      });
-      if (!result.ok) {
-        setDone(!next);
-        return;
-      }
-      if (next) {
-        setShowUndo(true);
-        undoTimerRef.current = window.setTimeout(() => {
-          setShowUndo(false);
-          undoTimerRef.current = null;
-        }, UNDO_TIMEOUT_MS);
-      } else {
-        setShowUndo(false);
-      }
-      router.refresh();
-    });
-  };
-
-  const handleUndo = () => {
-    clearUndoTimer();
-    setShowUndo(false);
-    setDone(false);
-    startTransition(async () => {
-      const result = await toggleTaskDoneAction({
-        notionPageId: t.notionPageId,
-        todoistTaskId: t.todoistTaskId,
-        done: false,
-      });
-      if (!result.ok) {
-        setDone(true);
-        return;
-      }
-      router.refresh();
-    });
-  };
-
-  const reschedule = (daysFromNow: number, label: string) => {
-    if (!canReschedule) return;
-    const target = new Date();
-    target.setDate(target.getDate() + daysFromNow);
-    const iso = toIsoDate(target);
-    setMoveError(null);
-    setMoveMessage(`Moved to ${label}`);
-    clearMoveTimer();
-    moveTimerRef.current = window.setTimeout(() => {
-      setMoveMessage(null);
-      moveTimerRef.current = null;
-    }, MOVE_FEEDBACK_MS);
-    startTransition(async () => {
-      const result = await setTodoistTaskDueAction({
-        todoistTaskId: t.todoistTaskId,
-        notionPageId: t.notionPageId,
-        dueDate: iso,
-        dueTime: null,
-      });
-      if (!result.ok) {
-        setMoveError(result.error);
-        setMoveMessage(null);
-        clearMoveTimer();
-        return;
-      }
-      router.refresh();
-    });
-  };
-
   const handlePushTodoist = () => {
     const id = t.notionPageId;
     if (!id) return;
     setCrossPostError(null);
-    startTransition(async () => {
+    startCrossPostTransition(async () => {
       const result = await pushNotionTaskToTodoistAction(id);
       if (!result.ok) {
         setCrossPostError(result.error);
@@ -176,7 +71,7 @@ export function TaskRow({
     const taskId = t.todoistTaskId;
     if (!taskId || !resolvedNotionParent) return;
     setCrossPostError(null);
-    startTransition(async () => {
+    startCrossPostTransition(async () => {
       const result = await pushTodoistTaskToNotionAction({
         todoistTaskId: taskId,
         notionParentPageId: resolvedNotionParent,
@@ -189,13 +84,18 @@ export function TaskRow({
     });
   };
 
+  const rowBusy = pending || crossPostPending;
+
   return (
-    <li className="group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50">
+    <li
+      className="group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50 focus-within:bg-bg-elevated/40"
+      onKeyDown={(e) => handleRowKeyDown(e, { toggleDone, reschedule, setExpanded, canToggle, canReschedule })}
+    >
       <div className="flex items-start gap-3">
       <button
         type="button"
-        onClick={handleClick}
-        disabled={!canToggle || pending}
+        onClick={toggleDone}
+        disabled={!canToggle || rowBusy}
         aria-label={done ? "Mark not done" : "Mark done"}
         className={cn(
           "mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition",
@@ -203,7 +103,7 @@ export function TaskRow({
             ? "border-fg bg-fg text-bg"
             : "border-border-strong hover:border-fg-muted",
           t.inProgress && !done && "border-accent",
-          pending && "opacity-60",
+          rowBusy && "opacity-60",
           !canToggle && "cursor-default",
         )}
       >
@@ -243,22 +143,15 @@ export function TaskRow({
                 "group-hover:opacity-100 focus-within:opacity-100",
               )}
             >
-              <RescheduleChip
-                label="Today"
-                onClick={() => reschedule(0, "today")}
-                disabled={pending}
-              />
-              <RescheduleChip
-                label="Tomorrow"
-                onClick={() => reschedule(1, "tomorrow")}
-                disabled={pending}
-              />
-              <RescheduleChip
-                label="+1w"
-                onClick={() => reschedule(7, "next week")}
-                disabled={pending}
-                title="Push out 1 week"
-              />
+              {RESCHEDULE_PRESETS.map((preset) => (
+                <RescheduleChip
+                  key={preset.key}
+                  label={preset.label}
+                  onClick={() => reschedule(preset.days, preset.hint)}
+                  disabled={pending}
+                  title={preset.title}
+                />
+              ))}
             </div>
           )}
           {showUndo && (
@@ -266,7 +159,7 @@ export function TaskRow({
               Done
               <button
                 type="button"
-                onClick={handleUndo}
+                onClick={undoDone}
                 disabled={pending}
                 className="underline decoration-dotted underline-offset-2 hover:text-fg disabled:opacity-50"
               >
@@ -312,7 +205,7 @@ export function TaskRow({
             {showTodoist && (
               <button
                 type="button"
-                disabled={pending}
+                disabled={crossPostPending}
                 onClick={handlePushTodoist}
                 className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-fg-muted hover:text-fg disabled:opacity-50"
               >
@@ -324,7 +217,7 @@ export function TaskRow({
                 {!showNotionProjectSelector ? (
                   <button
                     type="button"
-                    disabled={pending}
+                    disabled={crossPostPending}
                     onClick={() => setShowNotionProjectSelector(true)}
                     className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-fg-muted hover:text-fg disabled:opacity-50"
                   >
@@ -336,7 +229,7 @@ export function TaskRow({
                       aria-label="Notion parent project"
                       value={resolvedNotionParent}
                       onChange={(e) => setSelectedParent(e.target.value)}
-                      disabled={pending}
+                      disabled={crossPostPending}
                       className="max-w-[10rem] rounded border border-border bg-bg py-0.5 pr-6 pl-1.5 text-[11px] text-fg-muted"
                     >
                       {notionProjectPicklist.map((p) => (
@@ -347,7 +240,7 @@ export function TaskRow({
                     </select>
                     <button
                       type="button"
-                      disabled={pending || !resolvedNotionParent}
+                      disabled={crossPostPending || !resolvedNotionParent}
                       onClick={handlePushNotion}
                       className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-fg-muted hover:text-fg disabled:opacity-50"
                     >
@@ -398,4 +291,37 @@ function RescheduleChip({
       {label}
     </button>
   );
+}
+
+export function handleRowKeyDown(
+  e: KeyboardEvent<HTMLLIElement>,
+  args: {
+    toggleDone: () => void;
+    reschedule: (daysFromNow: number, label: string) => void;
+    setExpanded: (updater: (v: boolean) => boolean) => void;
+    canToggle: boolean;
+    canReschedule: boolean;
+  },
+) {
+  if (e.defaultPrevented) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+  if (isEditableTarget(e.target)) return;
+  const key = e.key.toLowerCase();
+  if (key === "d") {
+    if (!args.canToggle) return;
+    e.preventDefault();
+    args.toggleDone();
+    return;
+  }
+  if (key === "e") {
+    e.preventDefault();
+    args.setExpanded((v) => !v);
+    return;
+  }
+  if (!args.canReschedule) return;
+  const preset = RESCHEDULE_PRESETS.find((p) => p.key === key);
+  if (preset) {
+    e.preventDefault();
+    args.reschedule(preset.days, preset.hint);
+  }
 }

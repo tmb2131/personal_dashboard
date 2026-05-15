@@ -85,7 +85,7 @@ export function FooterStrip({
         <ReconcileButton />
       </span>
       <span>·</span>
-      <KeyHint k="⌃⌘N" label="new task" />
+      <ShortcutsHint />
       <ThemeToggle label="dark/light" onClick={toggleTheme} />
 
       <span className="font-serif text-fg-muted italic sm:ml-auto">{dateLabel}</span>
@@ -105,13 +105,22 @@ function ThemeToggle({ label, onClick }: { label: string; onClick: () => void })
   );
 }
 
-function KeyHint({ k, label }: { k: string; label: string }) {
+function ShortcutsHint() {
+  const openHelp = () => {
+    window.dispatchEvent(
+      new CustomEvent("dashboard-shortcut", { detail: { type: "help" } }),
+    );
+  };
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <button
+      type="button"
+      onClick={openHelp}
+      className="inline-flex items-center gap-1.5 text-fg-subtle transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+    >
       <kbd className="rounded border border-border bg-bg-elevated px-1.5 py-px font-mono text-[10px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-border-strong">
-        {k}
+        ?
       </kbd>
-      <span>{label}</span>
-    </span>
+      <span>shortcuts</span>
+    </button>
   );
 }

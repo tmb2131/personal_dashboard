@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useSyncStatus } from "./sync-status-context";
 
 type ManualSyncButtonProps = {
   size?: "sm" | "md";
@@ -32,6 +33,7 @@ export function ManualSyncButton({
   className,
 }: ManualSyncButtonProps) {
   const router = useRouter();
+  const { beginSync, endSync } = useSyncStatus();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<SyncToast | null>(null);
@@ -47,6 +49,13 @@ export function ManualSyncButton({
     setError(null);
     setShowToastDetails(false);
     setBusy(true);
+    beginSync();
+    let didEnd = false;
+    const finish = (errors?: Parameters<typeof endSync>[0]) => {
+      if (didEnd) return;
+      didEnd = true;
+      endSync(errors);
+    };
     try {
       const res = await fetch("/api/sync/run", { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as SyncRunResponse;
@@ -63,15 +72,22 @@ export function ManualSyncButton({
         return [];
       });
       const hasAnyProviderSuccess = succeeded.length > 0 || body.ok === true;
+      const errorsForContext = {
+        notion: body.notion?.ok === false ? body.notion.error ?? "Notion sync failed" : "",
+        todoist: body.todoist?.ok === false ? body.todoist.error ?? "Todoist sync failed" : "",
+        gcal: body.gcal?.ok === false ? body.gcal.error ?? "Calendar sync failed" : "",
+      };
       if (res.status === 401) {
         setError("Sign in required");
         setToast({ kind: "error", message: "Sync failed: sign in required.", details: detailLines });
+        finish({ notion: "Sign in required", todoist: "Sign in required", gcal: "Sign in required" });
         return;
       }
       if (!res.ok || !hasAnyProviderSuccess) {
         const message = body.error ?? `Sync failed (${res.status})`;
         setError(message);
         setToast({ kind: "error", message: `Sync failed: ${message}`, details: detailLines });
+        finish(errorsForContext);
         return;
       }
       const successToast =
@@ -83,14 +99,17 @@ export function ManualSyncButton({
         message: successToast,
         details: detailLines,
       });
+      finish(errorsForContext);
       router.refresh();
     } catch {
       setError("Network error");
       setToast({ kind: "error", message: "Sync failed: network error." });
+      finish();
     } finally {
+      finish();
       setBusy(false);
     }
-  }, [router]);
+  }, [router, beginSync, endSync]);
 
   const compact = size === "sm";
   const iconOnly = variant === "icon";

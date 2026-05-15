@@ -80,6 +80,10 @@ vi.mock("@/lib/date-utils", () => ({
   },
 }));
 
+vi.mock("@/lib/meeting-url", () => ({
+  extractMeetingUrl: () => null,
+}));
+
 import { loadDashboard } from "./dashboard-data";
 
 function notionPage(overrides: Record<string, unknown>) {

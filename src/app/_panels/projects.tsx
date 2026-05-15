@@ -242,9 +242,15 @@ function Tab({
   );
 }
 
-function NewProjectRow({ categories }: { categories: CategoryOption[] }) {
+function NewProjectRow({
+  categories,
+  autoOpen = false,
+}: {
+  categories: CategoryOption[];
+  autoOpen?: boolean;
+}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [title, setTitle] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
   const [focus, setFocus] = useState<"Yes" | "No">("No");
@@ -405,7 +411,10 @@ export function Projects({
       </div>
 
       {list.length === 0 ? (
-        <div className="px-5 pb-2 text-[12px] text-fg-subtle">{emptyMessage}</div>
+        <div className="px-5 pb-2 text-[12px]">
+          <span className="font-serif italic text-fg-muted">{emptyMessage}.</span>{" "}
+          <span className="text-fg-subtle">Add one below.</span>
+        </div>
       ) : (
         <ul>
           {list.map((p) => (
@@ -414,7 +423,7 @@ export function Projects({
         </ul>
       )}
 
-      <NewProjectRow categories={categories} />
+      <NewProjectRow categories={categories} autoOpen={groups.all.length === 0} />
     </section>
   );
 }

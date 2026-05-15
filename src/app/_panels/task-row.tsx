@@ -1,15 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { categoryDot, cn } from "@/lib/utils";
 import type { Subtask } from "@/lib/dashboard-data";
 import {
   pushNotionTaskToTodoistAction,
   pushTodoistTaskToNotionAction,
+  setTodoistTaskDueAction,
   toggleTaskDoneAction,
 } from "../actions";
 import { TaskDetailExpansion } from "./task-detail-expansion";
+
+const UNDO_TIMEOUT_MS = 5_000;
+const MOVE_FEEDBACK_MS = 2_500;
+
+function toIsoDate(d: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 export function TaskRow({
   t,
@@ -20,11 +29,29 @@ export function TaskRow({
 }) {
   const router = useRouter();
   const [done, setDone] = useState(t.done);
+  const [lastSyncedDone, setLastSyncedDone] = useState(t.done);
+  if (t.done !== lastSyncedDone) {
+    // Parent re-rendered with fresh data; reconcile optimistic mirror.
+    setDone(t.done);
+    setLastSyncedDone(t.done);
+  }
   const [pending, startTransition] = useTransition();
   const [crossPostError, setCrossPostError] = useState<string | null>(null);
   const [selectedParent, setSelectedParent] = useState("");
   const [showNotionProjectSelector, setShowNotionProjectSelector] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [showUndo, setShowUndo] = useState(false);
+  const [moveMessage, setMoveMessage] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const undoTimerRef = useRef<number | null>(null);
+  const moveTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+      if (moveTimerRef.current) window.clearTimeout(moveTimerRef.current);
+    };
+  }, []);
 
   const resolvedNotionParent =
     notionProjectPicklist.find((p) => p.id === selectedParent)?.id
@@ -33,6 +60,7 @@ export function TaskRow({
 
   const dotColor = categoryDot(t.categoryTitle);
   const canToggle = Boolean(t.notionPageId || t.todoistTaskId);
+  const canReschedule = !t.done && (Boolean(t.todoistTaskId) || Boolean(t.notionPageId));
 
   const showTodoist = t.source === "notion" && Boolean(t.notionPageId) && !t.todoistTaskId;
   const showNotion =
@@ -41,10 +69,25 @@ export function TaskRow({
     !t.notionPageId &&
     !t.hasRecurringTag;
 
+  const clearUndoTimer = () => {
+    if (undoTimerRef.current) {
+      window.clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+  };
+
+  const clearMoveTimer = () => {
+    if (moveTimerRef.current) {
+      window.clearTimeout(moveTimerRef.current);
+      moveTimerRef.current = null;
+    }
+  };
+
   const handleClick = () => {
     if (!canToggle) return;
     const next = !done;
     setDone(next);
+    clearUndoTimer();
     startTransition(async () => {
       const result = await toggleTaskDoneAction({
         notionPageId: t.notionPageId,
@@ -53,6 +96,62 @@ export function TaskRow({
       });
       if (!result.ok) {
         setDone(!next);
+        return;
+      }
+      if (next) {
+        setShowUndo(true);
+        undoTimerRef.current = window.setTimeout(() => {
+          setShowUndo(false);
+          undoTimerRef.current = null;
+        }, UNDO_TIMEOUT_MS);
+      } else {
+        setShowUndo(false);
+      }
+      router.refresh();
+    });
+  };
+
+  const handleUndo = () => {
+    clearUndoTimer();
+    setShowUndo(false);
+    setDone(false);
+    startTransition(async () => {
+      const result = await toggleTaskDoneAction({
+        notionPageId: t.notionPageId,
+        todoistTaskId: t.todoistTaskId,
+        done: false,
+      });
+      if (!result.ok) {
+        setDone(true);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const reschedule = (daysFromNow: number, label: string) => {
+    if (!canReschedule) return;
+    const target = new Date();
+    target.setDate(target.getDate() + daysFromNow);
+    const iso = toIsoDate(target);
+    setMoveError(null);
+    setMoveMessage(`Moved to ${label}`);
+    clearMoveTimer();
+    moveTimerRef.current = window.setTimeout(() => {
+      setMoveMessage(null);
+      moveTimerRef.current = null;
+    }, MOVE_FEEDBACK_MS);
+    startTransition(async () => {
+      const result = await setTodoistTaskDueAction({
+        todoistTaskId: t.todoistTaskId,
+        notionPageId: t.notionPageId,
+        dueDate: iso,
+        dueTime: null,
+      });
+      if (!result.ok) {
+        setMoveError(result.error);
+        setMoveMessage(null);
+        clearMoveTimer();
         return;
       }
       router.refresh();
@@ -125,17 +224,57 @@ export function TaskRow({
       </button>
 
       <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className={cn(
-            "truncate text-left text-[13.5px] transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted",
-            done && "line-through text-fg-subtle",
+        <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className={cn(
+              "min-w-0 flex-1 truncate text-left text-[13.5px] transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted",
+              done && "line-through text-fg-subtle",
+            )}
+            title={expanded ? "Hide details" : "Show details"}
+          >
+            {t.title}
+          </button>
+          {canReschedule && (
+            <div
+              className={cn(
+                "flex shrink-0 items-center gap-1 text-[10px] text-fg-subtle opacity-0 transition-opacity duration-150 ease-out motion-reduce:duration-0",
+                "group-hover:opacity-100 focus-within:opacity-100",
+              )}
+            >
+              <RescheduleChip
+                label="Today"
+                onClick={() => reschedule(0, "today")}
+                disabled={pending}
+              />
+              <RescheduleChip
+                label="Tomorrow"
+                onClick={() => reschedule(1, "tomorrow")}
+                disabled={pending}
+              />
+              <RescheduleChip
+                label="+1w"
+                onClick={() => reschedule(7, "next week")}
+                disabled={pending}
+                title="Push out 1 week"
+              />
+            </div>
           )}
-          title={expanded ? "Hide details" : "Show details"}
-        >
-          {t.title}
-        </button>
+          {showUndo && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-bg-elevated px-2 py-px text-[10px] text-fg-muted">
+              Done
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={pending}
+                className="underline decoration-dotted underline-offset-2 hover:text-fg disabled:opacity-50"
+              >
+                undo
+              </button>
+            </span>
+          )}
+        </div>
         {(t.estimateMinutes || t.projectTitle) && (
           <div
             className={cn(
@@ -155,6 +294,15 @@ export function TaskRow({
                 />
                 <span className="truncate">{t.projectTitle}</span>
               </span>
+            )}
+          </div>
+        )}
+        {(moveMessage || moveError) && (
+          <div className="mt-0.5 text-[10px]">
+            {moveError ? (
+              <span className="text-red-500/90">{moveError}</span>
+            ) : (
+              <span aria-live="polite" className="text-fg-subtle">{moveMessage}</span>
             )}
           </div>
         )}
@@ -225,5 +373,29 @@ export function TaskRow({
         <TaskDetailExpansion t={t} extraError={crossPostError} />
       )}
     </li>
+  );
+}
+
+function RescheduleChip({
+  label,
+  onClick,
+  disabled,
+  title,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? `Reschedule to ${label}`}
+      className="rounded border border-border bg-bg px-1.5 py-px tabular-nums hover:border-fg-muted hover:text-fg disabled:opacity-50"
+    >
+      {label}
+    </button>
   );
 }

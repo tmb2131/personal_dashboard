@@ -2,6 +2,7 @@ import { AutoTodoistSync } from "./_panels/auto-todoist-sync";
 import { DashboardClient } from "./_panels/dashboard-client";
 import { HeroHeader } from "./_panels/hero-header";
 import { ManualSyncButton } from "./_panels/manual-sync-button";
+import { SyncStatusProvider } from "./_panels/sync-status-context";
 import { TodayRecurringTasksProvider } from "./_panels/today-recurring-tasks-context";
 import { loadDashboardSafe } from "@/lib/dashboard-data";
 
@@ -42,27 +43,29 @@ npm run dev`}
 
   if (data.isEmpty) {
     return (
-      <TodayRecurringTasksProvider>
-        <AutoTodoistSync />
-        <main className="flex min-h-dvh flex-col overflow-x-clip">
-          <HeroHeader meta={data.meta} initialNow={data.now} />
-          <div className="flex flex-1 items-center justify-center p-8">
-            <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 text-center shadow-sm transition-shadow duration-200 ease-out motion-reduce:duration-0 hover:shadow-sm">
-              <h2 className="text-base font-medium">No data yet</h2>
-              <p className="text-sm text-fg-muted">
-                Run an initial sync to pull your Notion, Todoist and Google Calendar data.
-              </p>
-              <div className="flex flex-col items-center gap-2">
-                <ManualSyncButton size="md" />
+      <SyncStatusProvider>
+        <TodayRecurringTasksProvider>
+          <AutoTodoistSync />
+          <main className="flex min-h-dvh flex-col overflow-x-clip">
+            <HeroHeader meta={data.meta} initialNow={data.now} />
+            <div className="flex flex-1 items-center justify-center p-8">
+              <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 text-center shadow-sm transition-shadow duration-200 ease-out motion-reduce:duration-0 hover:shadow-sm">
+                <h2 className="text-base font-medium">No data yet</h2>
+                <p className="text-sm text-fg-muted">
+                  Run an initial sync to pull your Notion, Todoist and Google Calendar data.
+                </p>
+                <div className="flex flex-col items-center gap-2">
+                  <ManualSyncButton size="md" />
+                </div>
+                <p className="text-[11px] text-fg-subtle">
+                  (Or trigger from the terminal:{" "}
+                  <code className="font-mono">curl -X POST localhost:3000/api/sync/run</code>)
+                </p>
               </div>
-            <p className="text-[11px] text-fg-subtle">
-              (Or trigger from the terminal:{" "}
-              <code className="font-mono">curl -X POST localhost:3000/api/sync/run</code>)
-            </p>
             </div>
-          </div>
-        </main>
-      </TodayRecurringTasksProvider>
+          </main>
+        </TodayRecurringTasksProvider>
+      </SyncStatusProvider>
     );
   }
 

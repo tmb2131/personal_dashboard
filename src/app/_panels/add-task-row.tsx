@@ -7,9 +7,15 @@ import { quickAddAction } from "../actions";
 
 type NotionProjectOption = { id: string; title: string };
 
-export function AddTaskRow({ notionProjectPicklist }: { notionProjectPicklist: NotionProjectOption[] }) {
+export function AddTaskRow({
+  notionProjectPicklist,
+  autoOpen = false,
+}: {
+  notionProjectPicklist: NotionProjectOption[];
+  autoOpen?: boolean;
+}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<NotionProjectOption | null>(null);

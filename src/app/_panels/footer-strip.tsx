@@ -85,7 +85,7 @@ function ThemeToggle({ label, onClick }: { label: string; onClick: () => void })
     <button
       type="button"
       onClick={onClick}
-      className="rounded-sm text-fg-subtle hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="rounded-sm text-fg-subtle transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       {label}
     </button>
@@ -95,7 +95,7 @@ function ThemeToggle({ label, onClick }: { label: string; onClick: () => void })
 function KeyHint({ k, label }: { k: string; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <kbd className="rounded border border-border bg-bg-elevated px-1.5 py-px font-mono text-[10px] text-fg-muted">
+      <kbd className="rounded border border-border bg-bg-elevated px-1.5 py-px font-mono text-[10px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-border-strong">
         {k}
       </kbd>
       <span>{label}</span>

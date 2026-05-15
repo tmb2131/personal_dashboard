@@ -18,8 +18,13 @@ export function DashboardViewChips() {
               onClick={() => setActiveView(view.id)}
               aria-pressed={isActive}
               className={cn(
-                "shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-fg-muted transition hover:text-fg",
-                isActive && "border-border-strong bg-bg-elevated text-fg shadow-sm",
+                "shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-fg-muted",
+                "transition-[color,box-shadow,background-color,border-color] duration-200 ease-out motion-reduce:duration-0",
+                "hover:bg-bg-elevated/60 hover:text-fg",
+                "focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg focus-visible:outline-none",
+                "motion-safe:active:scale-[0.98]",
+                isActive &&
+                  "border-border-strong bg-bg-elevated text-fg shadow-sm hover:bg-bg-elevated",
               )}
             >
               {view.label}

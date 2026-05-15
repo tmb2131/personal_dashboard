@@ -47,11 +47,11 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
   });
 
   return (
-    <li className="px-5 py-3">
+    <li className="rounded-lg px-5 py-3 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start gap-4 text-left"
+        className="flex w-full items-start gap-4 text-left transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted"
         aria-expanded={expanded}
       >
         <div className="w-12 shrink-0 text-right">

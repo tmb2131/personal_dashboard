@@ -151,7 +151,7 @@ function ProjectRow({ p }: { p: Project }) {
   };
 
   return (
-    <li className="px-5 py-2.5">
+    <li className="rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50">
       <div className="flex items-center gap-2.5">
         <button
           type="button"
@@ -174,7 +174,7 @@ function ProjectRow({ p }: { p: Project }) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted"
           aria-expanded={expanded}
         >
           <span className="truncate text-[13.5px] font-medium">{p.title}</span>
@@ -194,7 +194,7 @@ function ProjectRow({ p }: { p: Project }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="text-fg-subtle hover:text-fg-muted"
+            className="text-fg-subtle transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted"
             aria-expanded={expanded}
           >
             {expanded ? "Hide" : "Show"}

@@ -76,7 +76,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
 
 function SourcePill({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-pill-bg px-2.5 py-0.5 text-[11px] text-pill-fg">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-pill-bg px-2.5 py-0.5 text-[11px] text-pill-fg transition-opacity duration-200 ease-out motion-reduce:duration-0 hover:opacity-90">
       <span className="h-1.5 w-1.5 rounded-full bg-done" />
       {label}
     </span>

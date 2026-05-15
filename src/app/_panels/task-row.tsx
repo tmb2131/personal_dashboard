@@ -91,7 +91,7 @@ export function TaskRow({
   };
 
   return (
-    <li className="group px-5 py-2.5">
+    <li className="group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50">
       <div className="flex items-start gap-3">
       <button
         type="button"
@@ -129,7 +129,7 @@ export function TaskRow({
           type="button"
           onClick={() => setExpanded((v) => !v)}
           className={cn(
-            "truncate text-left text-[13.5px] hover:text-fg-muted",
+            "truncate text-left text-[13.5px] transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted",
             done && "line-through text-fg-subtle",
           )}
           title={expanded ? "Hide details" : "Show details"}
@@ -166,7 +166,7 @@ export function TaskRow({
                 type="button"
                 disabled={pending}
                 onClick={handlePushTodoist}
-                className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition hover:border-fg-muted hover:text-fg disabled:opacity-50"
+                className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-fg-muted hover:text-fg disabled:opacity-50"
               >
                 Add to Todoist
               </button>
@@ -178,7 +178,7 @@ export function TaskRow({
                     type="button"
                     disabled={pending}
                     onClick={() => setShowNotionProjectSelector(true)}
-                    className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition hover:border-fg-muted hover:text-fg disabled:opacity-50"
+                    className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-fg-muted hover:text-fg disabled:opacity-50"
                   >
                     Add to Notion
                   </button>
@@ -201,7 +201,7 @@ export function TaskRow({
                       type="button"
                       disabled={pending || !resolvedNotionParent}
                       onClick={handlePushNotion}
-                      className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition hover:border-fg-muted hover:text-fg disabled:opacity-50"
+                      className="rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors duration-200 ease-out motion-reduce:duration-0 hover:border-fg-muted hover:text-fg disabled:opacity-50"
                     >
                       Add to Notion
                     </button>

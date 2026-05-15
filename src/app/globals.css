@@ -23,6 +23,10 @@
   --dot-family: #ef4444;
   --dot-personal: #71717a;
   --dot-default: #a8a193;
+
+  /* Default interaction timing; use with Tailwind `duration-200` + `motion-reduce:duration-0` on components. */
+  --motion-duration: 200ms;
+  --motion-ease: cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -119,3 +123,14 @@ body {
   50% { opacity: 1; }
 }
 .now-line { animation: nowPulse 3s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0ms;
+  }
+
+  .now-line {
+    animation: none;
+    opacity: 1;
+  }
+}

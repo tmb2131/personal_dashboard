@@ -78,7 +78,7 @@ export function AddTaskRow({ notionProjectPicklist }: { notionProjectPicklist: N
       <button
         type="button"
         onClick={() => activateInput()}
-        className="flex w-full items-center gap-2 px-5 py-2.5 text-left text-[12px] text-fg-subtle hover:text-fg"
+        className="flex w-full items-center gap-2 rounded-lg px-5 py-2.5 text-left text-[12px] text-fg-subtle transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50 hover:text-fg"
       >
         <span className="text-[14px] leading-none">+</span>
         Add task
@@ -146,7 +146,7 @@ export function AddTaskRow({ notionProjectPicklist }: { notionProjectPicklist: N
                 e.preventDefault();
                 chooseProject(project);
               }}
-              className="block w-full rounded px-2 py-1.5 text-left text-[12px] text-fg hover:bg-bg"
+              className="block w-full rounded px-2 py-1.5 text-left text-[12px] text-fg transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg"
             >
               {project.title}
             </button>

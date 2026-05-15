@@ -114,7 +114,9 @@ export function ManualSyncButton({
           aria-label={busy ? "Syncing" : "Sync now"}
           title={busy ? "Syncing" : "Sync now"}
           className={cn(
-            "inline-flex items-center justify-center rounded-md border border-border bg-bg hover:bg-bg-elevated disabled:opacity-50",
+            "inline-flex items-center justify-center rounded-md border border-border bg-bg",
+            "transition-colors duration-200 ease-out motion-reduce:duration-0",
+            "hover:bg-bg-elevated motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:motion-safe:active:scale-100",
             iconOnly ? (compact ? "h-7 w-7" : "h-9 w-9") : compact ? "h-7 px-2.5 text-[11px]" : "h-9 px-4 text-sm",
           )}
         >

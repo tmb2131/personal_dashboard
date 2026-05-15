@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   if (error) {
     return (
       <main className="flex min-h-dvh items-center justify-center p-8">
-        <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6">
+        <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 shadow-sm transition-shadow duration-200 ease-out motion-reduce:duration-0 hover:shadow-sm">
           <h1 className="text-base font-medium">Setup needed</h1>
           <p className="text-sm text-fg-muted">
             The dashboard couldn&apos;t reach the database. Make sure{" "}
@@ -47,7 +47,7 @@ npm run dev`}
         <main className="flex min-h-dvh flex-col overflow-x-clip">
           <HeroHeader meta={data.meta} initialNow={data.now} />
           <div className="flex flex-1 items-center justify-center p-8">
-            <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 text-center">
+            <div className="max-w-md space-y-3 rounded-lg border border-border bg-bg-elevated p-6 text-center shadow-sm transition-shadow duration-200 ease-out motion-reduce:duration-0 hover:shadow-sm">
               <h2 className="text-base font-medium">No data yet</h2>
               <p className="text-sm text-fg-muted">
                 Run an initial sync to pull your Notion, Todoist and Google Calendar data.

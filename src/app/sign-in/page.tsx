@@ -16,7 +16,7 @@ export default function SignInPage() {
         >
           <button
             type="submit"
-            className="inline-flex h-9 w-full items-center justify-center rounded-md border border-zinc-200 bg-white text-sm font-medium transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+            className="inline-flex h-9 w-full items-center justify-center rounded-md border border-zinc-200 bg-white text-sm font-medium transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-zinc-50 motion-safe:active:scale-[0.99] dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
           >
             Continue with Google
           </button>

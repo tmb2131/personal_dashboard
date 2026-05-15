@@ -55,7 +55,7 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
   const renderDayCard = (g: DayGroupedEvents) => (
     <div
       key={g.bucket.key}
-      className="rounded-md border border-border bg-bg-elevated px-2.5 py-2 sm:px-3 sm:py-2.5"
+      className="rounded-md border border-border bg-bg-elevated px-2.5 py-2 transition-[box-shadow,border-color] duration-200 ease-out motion-reduce:duration-0 hover:border-border-strong hover:shadow-sm sm:px-3 sm:py-2.5"
     >
       <div className="mb-2 flex items-baseline gap-2">
         <span className="text-[13px] font-medium">{g.bucket.label}</span>

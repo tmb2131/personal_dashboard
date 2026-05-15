@@ -91,8 +91,8 @@ export function TodayCalendar({
               <div
                 key={e.id}
                 className={cn(
-                  "absolute left-9 right-0 rounded border bg-bg-elevated px-2 py-1 text-[12px] leading-tight",
-                  "border-border-strong",
+                  "absolute left-9 right-0 z-10 rounded border bg-bg-elevated px-2 py-1 text-[12px] leading-tight",
+                  "border-border-strong transition-shadow duration-200 ease-out motion-reduce:duration-0 hover:z-20 hover:shadow-sm",
                 )}
                 style={{ top, height }}
                 title={e.summary ?? ""}

@@ -20,6 +20,7 @@ import { Projects } from "./projects";
 import { ShortcutHelpOverlay } from "./shortcut-help-overlay";
 import { SyncStatusProvider } from "./sync-status-context";
 import { TaskList } from "./task-list";
+import { TaskSectionShortcut } from "./task-section-shortcut";
 import {
   TodayRecurringTasksProvider,
   useTodayRecurringTasksVisibility,
@@ -44,11 +45,11 @@ function View({
 
 function DashboardBody({ data }: { data: DashboardData }) {
   const { activeView } = useDashboardView();
-  const { showRecurringTodayTasks } = useTodayRecurringTasksVisibility();
+  const { showTodayRecurringSection } = useTodayRecurringTasksVisibility();
 
   const wide =
     activeView === "trips" ||
-    (activeView === "today" && showRecurringTodayTasks);
+    (activeView === "today" && showTodayRecurringSection);
 
   const gridLayoutClass =
     activeView === "dashboard"
@@ -93,7 +94,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
 
         <View
           show={["today"]}
-          when={showRecurringTodayTasks}
+          when={showTodayRecurringSection}
           className="min-w-0"
         >
           <TaskList
@@ -131,6 +132,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
 
       <FooterStrip initialNow={data.now} lastSyncAt={data.lastSyncAt} />
       <ShortcutHelpOverlay />
+      <TaskSectionShortcut />
     </main>
   );
 }

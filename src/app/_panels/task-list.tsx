@@ -22,7 +22,12 @@ export function TaskList({
   source?: string;
   splitMode?: SplitMode;
 }) {
-  const { showRecurringTodayTasks, setShowRecurringTodayTasks } = useTodayRecurringTasksVisibility();
+  const {
+    showRecurringTodayTasks,
+    setShowRecurringTodayTasks,
+    showTodayRecurringSection,
+    setShowTodayRecurringSection,
+  } = useTodayRecurringTasksVisibility();
   const meta = useDashboardMeta();
 
   const visibleTasks = useMemo(() => {
@@ -49,8 +54,37 @@ export function TaskList({
     tasks.length === 0 &&
     (meta?.todayMeetingCount ?? 0) === 0;
 
+  const isTodayNonRecurring = splitMode === "non-recurring";
+  const toggleValue = isTodayNonRecurring ? showTodayRecurringSection : showRecurringTodayTasks;
+  const setToggle = isTodayNonRecurring ? setShowTodayRecurringSection : setShowRecurringTodayTasks;
+  const toggleCopy = isTodayNonRecurring
+    ? toggleValue
+      ? "Showing Recurring"
+      : "Hiding Recurring"
+    : toggleValue
+    ? "All tasks"
+    : "Excluding Recurring folder";
+  const toggleAriaLabel = isTodayNonRecurring
+    ? toggleValue
+      ? "Recurring section is visible. Switch to hide the Recurring section."
+      : "Recurring section is hidden. Switch to show the Recurring section."
+    : toggleValue
+    ? "Today list shows every task including Recurring folder tasks. Switch to exclude Recurring folder tasks."
+    : "Today list hides Recurring folder tasks. Switch to show all tasks.";
+  const toggleTitle = isTodayNonRecurring
+    ? toggleValue
+      ? "Showing Recurring section (toggle to hide)"
+      : "Recurring section hidden (toggle to show)"
+    : toggleValue
+    ? "Showing all tasks (toggle to hide Recurring folder tasks)"
+    : "Hiding Recurring folder tasks (toggle to show every task)";
+
   return (
-    <section id={sectionId} className="border-t border-border scroll-mt-6">
+    <section
+      id={sectionId}
+      data-task-section
+      className="border-t border-border scroll-mt-6"
+    >
       <SectionHeader
         eyebrow="Today"
         title={sectionTitle}
@@ -61,29 +95,21 @@ export function TaskList({
         {!isRecurringMode && (
           <div className="flex cursor-default select-none items-center gap-2 text-[11px] text-fg-muted">
             <span className="max-w-[9rem] leading-snug normal-case tracking-normal">
-              {showRecurringTodayTasks ? "All tasks" : "Excluding Recurring folder"}
+              {toggleCopy}
             </span>
             <button
               type="button"
               role="switch"
-              aria-checked={showRecurringTodayTasks}
-              aria-label={
-                showRecurringTodayTasks
-                  ? "Today list shows every task including Recurring folder tasks. Switch to exclude Recurring folder tasks."
-                  : "Today list hides Recurring folder tasks. Switch to show all tasks."
-              }
-              title={
-                showRecurringTodayTasks
-                  ? "Showing all tasks (toggle to hide Recurring folder tasks)"
-                  : "Hiding Recurring folder tasks (toggle to show every task)"
-              }
-              onClick={() => setShowRecurringTodayTasks(!showRecurringTodayTasks)}
+              aria-checked={toggleValue}
+              aria-label={toggleAriaLabel}
+              title={toggleTitle}
+              onClick={() => setToggle(!toggleValue)}
               className="relative inline-flex h-5 w-[34px] shrink-0 rounded-full border border-border bg-bg transition-colors data-[state=on]:border-fg-muted/40 data-[state=on]:bg-bg-elevated"
-              data-state={showRecurringTodayTasks ? "on" : "off"}
+              data-state={toggleValue ? "on" : "off"}
             >
               <span
                 className="pointer-events-none absolute top-px left-px h-[18px] w-[18px] rounded-full bg-fg-muted/60 shadow transition-transform data-[state=on]:translate-x-[14px] data-[state=on]:bg-fg-muted"
-                data-state={showRecurringTodayTasks ? "on" : "off"}
+                data-state={toggleValue ? "on" : "off"}
               />
             </button>
           </div>
@@ -116,10 +142,10 @@ export function TaskList({
           <EmptyState
             message="No open tasks in this view."
             cta={
-              !showRecurringTodayTasks
+              !toggleValue
                 ? {
                     label: "Show recurring tasks",
-                    onClick: () => setShowRecurringTodayTasks(true),
+                    onClick: () => setToggle(true),
                   }
                 : null
             }

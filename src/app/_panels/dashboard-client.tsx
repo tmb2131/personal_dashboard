@@ -48,6 +48,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
 
   const wide =
     activeView === "trips" ||
+    activeView === "upcoming" ||
     (activeView === "today" && showRecurringTodayTasks);
 
   const gridLayoutClass =
@@ -89,13 +90,6 @@ function DashboardBody({ data }: { data: DashboardData }) {
               next7DaysTasks={data.next7DaysTasks}
             />
           </View>
-          <View show={["upcoming"]}>
-            <PersonalTaskList
-              tasks={data.personalTasks}
-              next7DaysTasks={data.next7DaysTasks}
-              defaultView="next7Days"
-            />
-          </View>
         </View>
 
         <View
@@ -107,6 +101,14 @@ function DashboardBody({ data }: { data: DashboardData }) {
             tasks={data.todayTasks}
             notionProjectPicklist={data.notionProjectPicklist}
             splitMode="recurring"
+          />
+        </View>
+
+        <View show={["upcoming"]} className="min-w-0">
+          <PersonalTaskList
+            tasks={data.personalTasks}
+            next7DaysTasks={data.next7DaysTasks}
+            defaultView="next7Days"
           />
         </View>
 

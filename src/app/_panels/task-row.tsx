@@ -132,7 +132,7 @@ export function TaskRow({
               "min-w-0 flex-1 truncate text-left text-[13.5px] transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted",
               done && "line-through text-fg-subtle",
             )}
-            title={expanded ? "Hide details" : "Show details"}
+            title={expanded ? "Hide details" : "Click to edit / show details"}
           >
             {t.title}
           </button>

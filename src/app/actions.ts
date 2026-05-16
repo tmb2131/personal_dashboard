@@ -537,6 +537,26 @@ export async function setTodoistTaskDescriptionAction(args: {
   }
 }
 
+export async function setTodoistTaskContentAction(args: {
+  todoistTaskId: string;
+  content: string;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.todoistTaskId) return { ok: false, error: "Missing Todoist task" };
+  if (!args.content.trim()) return { ok: false, error: "Task title is required" };
+  if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
+
+  try {
+    const api = new TodoistApi(process.env.TODOIST_TOKEN);
+    await api.updateTask(args.todoistTaskId, { content: args.content.trim() });
+    await syncTodoistTasksByIds([args.todoistTaskId]);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 export async function createProjectSubtaskAction(args: {
   notionParentPageId: string;
   title: string;

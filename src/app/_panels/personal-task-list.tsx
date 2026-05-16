@@ -185,11 +185,13 @@ function RescheduleChip({
 export function PersonalTaskList({
   tasks,
   next7DaysTasks,
+  defaultView = "personal",
 }: {
   tasks: Subtask[];
   next7DaysTasks: Subtask[];
+  defaultView?: PersonalTaskView;
 }) {
-  const [view, setView] = useState<PersonalTaskView>("personal");
+  const [view, setView] = useState<PersonalTaskView>(defaultView);
   const visibleTasks = view === "personal" ? tasks : next7DaysTasks;
   const taskContext = (t: Subtask) => {
     if (t.projectTitle) return `Notion: ${t.projectTitle}`;

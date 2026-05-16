@@ -88,6 +88,7 @@ export function TaskRow({
 
   return (
     <li
+      data-task-row
       className="group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50 focus-within:bg-bg-elevated/40"
       onKeyDown={(e) => handleRowKeyDown(e, { toggleDone, reschedule, setExpanded, canToggle, canReschedule })}
     >
@@ -127,6 +128,7 @@ export function TaskRow({
         <div className="flex items-start gap-2">
           <button
             type="button"
+            data-task-focus-target
             onClick={() => setExpanded((v) => !v)}
             className={cn(
               "min-w-0 flex-1 truncate text-left text-[13.5px] transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted",
@@ -317,8 +319,28 @@ export function handleRowKeyDown(
   },
 ) {
   if (e.defaultPrevented) return;
-  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
   if (isEditableTarget(e.target)) return;
+
+  if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    const targets = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-task-focus-target]"),
+    ).filter((el) => el.offsetParent !== null);
+    if (targets.length === 0) return;
+    const current = document.activeElement as HTMLElement | null;
+    const index = current ? targets.indexOf(current) : -1;
+    let nextIndex: number;
+    if (index === -1) {
+      nextIndex = e.key === "ArrowDown" ? 0 : targets.length - 1;
+    } else {
+      nextIndex = e.key === "ArrowDown" ? index + 1 : index - 1;
+      if (nextIndex < 0 || nextIndex >= targets.length) return;
+    }
+    e.preventDefault();
+    targets[nextIndex]?.focus();
+    return;
+  }
+
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
   const key = e.key.toLowerCase();
   if (key === "d") {
     if (!args.canToggle) return;

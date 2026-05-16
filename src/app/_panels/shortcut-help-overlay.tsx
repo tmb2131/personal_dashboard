@@ -62,12 +62,14 @@ export function ShortcutHelpOverlay() {
         </div>
         <div className="space-y-4 text-[12px]">
           <ShortcutGroup title="Global">
-            <ShortcutRow k="⌃⌘N" label="Add a new task" />
+            <ShortcutRow k="⇧N" label="Add a new task" />
+            <ShortcutRow k="⇧T" label="Jump to / cycle task sections" />
             <ShortcutRow k="⇧D" label="Toggle dark / light theme" />
             <ShortcutRow k="?" label="Toggle this help" />
             <ShortcutRow k="Esc" label="Close overlays / forms" />
           </ShortcutGroup>
-          <ShortcutGroup title="Task row (tab into the row first)">
+          <ShortcutGroup title="Task row (⇧T or tab into the row first)">
+            <ShortcutRow k="↑ ↓" label="Move between tasks" />
             <ShortcutRow k="d" label="Mark done / undone" />
             <ShortcutRow k="t" label="Reschedule to today" />
             <ShortcutRow k="m" label="Move to tomorrow" />

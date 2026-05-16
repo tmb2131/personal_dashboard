@@ -21,6 +21,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "payload too large" }, { status: 413 });
   }
 
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(body) as Record<string, unknown>;
+  } catch {
+    await logAudit({ source: "webhook-notion", op: "parse_error", error: "invalid json" });
+    return NextResponse.json({ error: "bad json" }, { status: 400 });
+  }
+
+  // Verification handshake runs before signature enforcement: at setup time
+  // the signing secret doesn't exist yet, and the handshake request has no
+  // signature header to verify.
+  if (json.verification_token && typeof json.verification_token === "string") {
+    console.log("[notion-webhook] verification_token:", json.verification_token);
+    return NextResponse.json({ verification_token: json.verification_token });
+  }
+
   const secret = process.env.NOTION_WEBHOOK_SECRET;
   if (!secret && isProductionRuntime()) {
     await logAudit({
@@ -39,19 +55,6 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
     }
-  }
-
-  let json: Record<string, unknown>;
-  try {
-    json = JSON.parse(body) as Record<string, unknown>;
-  } catch {
-    await logAudit({ source: "webhook-notion", op: "parse_error", error: "invalid json" });
-    return NextResponse.json({ error: "bad json" }, { status: 400 });
-  }
-
-  if (json.verification_token && typeof json.verification_token === "string") {
-    console.log("[notion-webhook] verification_token:", json.verification_token);
-    return NextResponse.json({ verification_token: json.verification_token });
   }
 
   const pageIds = collectNotionPageIdsFromPayload(json);

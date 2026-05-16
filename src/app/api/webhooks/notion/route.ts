@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (json.verification_token && typeof json.verification_token === "string") {
+    console.log("[notion-webhook] verification_token:", json.verification_token);
     return NextResponse.json({ verification_token: json.verification_token });
   }
 

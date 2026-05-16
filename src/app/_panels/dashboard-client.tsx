@@ -83,10 +83,17 @@ function DashboardBody({ data }: { data: DashboardData }) {
             notionProjectPicklist={data.notionProjectPicklist}
             splitMode={tasksSplitMode}
           />
-          <View show={["dashboard", "upcoming"]}>
+          <View show={["dashboard"]}>
             <PersonalTaskList
               tasks={data.personalTasks}
               next7DaysTasks={data.next7DaysTasks}
+            />
+          </View>
+          <View show={["upcoming"]}>
+            <PersonalTaskList
+              tasks={data.personalTasks}
+              next7DaysTasks={data.next7DaysTasks}
+              defaultView="next7Days"
             />
           </View>
         </View>

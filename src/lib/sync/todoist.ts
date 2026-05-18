@@ -333,3 +333,73 @@ export async function syncTodoistTasksByIds(
 export async function deleteTodoistTaskCacheRow(taskId: string) {
   await db.delete(schema.todoistTasks).where(eq(schema.todoistTasks.id, taskId));
 }
+
+/**
+ * Fetch and upsert specific projects (incremental webhook path for `project:*`).
+ * Avoids the full `syncTodoist()` re-pull on simple renames / archives.
+ */
+export async function syncTodoistProjectsByIds(projectIds: string[]) {
+  const now = new Date();
+  const results = { upserted: 0, missing: 0, errors: [] as string[] };
+  if (!projectIds.length) return results;
+  const a = api() as unknown as { getProject: (id: string) => Promise<TodoistProject> };
+
+  for (const id of projectIds) {
+    try {
+      const p = await a.getProject(id);
+      await db
+        .insert(schema.todoistProjects)
+        .values({
+          id: p.id,
+          name: p.name,
+          parentId: p.parentId ?? null,
+          color: p.color ?? null,
+          archived: Boolean(p.isArchived),
+          raw: p as unknown,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: schema.todoistProjects.id,
+          set: {
+            name: sql`excluded.name`,
+            parentId: sql`excluded.parent_id`,
+            color: sql`excluded.color`,
+            archived: sql`excluded.archived`,
+            raw: sql`excluded.raw`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
+      results.upserted++;
+    } catch (e) {
+      const msg = (e as Error).message ?? "";
+      // 404 / not found → project was deleted upstream; mark archived locally.
+      if (/404|not[\s-]*found/i.test(msg)) {
+        await db
+          .update(schema.todoistProjects)
+          .set({ archived: true, updatedAt: now })
+          .where(eq(schema.todoistProjects.id, id));
+        results.missing++;
+      } else {
+        results.errors.push(`${id}: ${msg}`);
+      }
+    }
+  }
+
+  await db
+    .insert(schema.syncState)
+    .values({ source: "todoist", lastIncrementalAt: now })
+    .onConflictDoUpdate({
+      target: schema.syncState.source,
+      set: { lastIncrementalAt: now },
+    });
+
+  return results;
+}
+
+export async function markTodoistProjectArchived(projectId: string) {
+  const now = new Date();
+  await db
+    .update(schema.todoistProjects)
+    .set({ archived: true, updatedAt: now })
+    .where(eq(schema.todoistProjects.id, projectId));
+}

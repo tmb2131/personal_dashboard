@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { after } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
@@ -9,6 +10,7 @@ import {
 } from "@/lib/sync/gcal";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /** Google Calendar push notifications (channel callbacks). */
 export async function POST(req: NextRequest) {
@@ -46,6 +48,15 @@ export async function POST(req: NextRequest) {
   }
 
   const calendarId = row.source.slice("gcal:".length);
+
+  // Defer the actual sync via `after()` so Google sees a fast 200 ack. Vercel's
+  // waitUntil keeps the function alive until the work completes.
+  after(() => runGcalWebhookWork({ calendarId }));
+
+  return NextResponse.json({ ok: true });
+}
+
+async function runGcalWebhookWork({ calendarId }: { calendarId: string }) {
   const cal = await getCalendarClientFromRefresh();
   if (!cal) {
     await logAudit({
@@ -53,7 +64,7 @@ export async function POST(req: NextRequest) {
       op: "no_oauth",
       payload: { calendarId },
     });
-    return NextResponse.json({ ok: true });
+    return;
   }
 
   try {
@@ -81,6 +92,4 @@ export async function POST(req: NextRequest) {
       error: (e as Error).message,
     });
   }
-
-  return NextResponse.json({ ok: true });
 }

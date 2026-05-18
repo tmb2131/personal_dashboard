@@ -1,6 +1,6 @@
 import { Client } from "@notionhq/client";
 import { db, schema } from "@/lib/db";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { parseDateOnlyLocalStrict, parseDateTimeLocal } from "@/lib/date-utils";
 import {
   notionStatusFromTodoist,
@@ -608,6 +608,35 @@ export async function updateNotionProjectSubtask(input: {
     properties: properties as never,
   });
   await syncNotionEntitiesByIds([input.notionPageId], new Map([[input.notionPageId, "todo"]]));
+}
+
+export async function updateNotionTaskParent(
+  notionPageId: string,
+  parentPageId: string,
+): Promise<void> {
+  if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
+  if (!notionPageId) throw new Error("Missing task page");
+  if (!parentPageId) throw new Error("Missing parent page");
+
+  const [parentPage] = await db
+    .select()
+    .from(schema.notionPages)
+    .where(eq(schema.notionPages.id, parentPageId));
+  if (!parentPage) throw new Error("Parent Notion page not found");
+  if (parentPage.archived || parentPage.ignore) {
+    throw new Error("Parent task cannot be archived or ignored");
+  }
+  if (parentPage.parentId) {
+    throw new Error("Choose a top-level Notion project row as the parent");
+  }
+
+  await client().pages.update({
+    page_id: notionPageId,
+    properties: {
+      "Parent task": { relation: [{ id: parentPageId }] },
+    } as never,
+  });
+  await syncNotionEntitiesByIds([notionPageId], new Map([[notionPageId, "todo"]]));
 }
 
 /**

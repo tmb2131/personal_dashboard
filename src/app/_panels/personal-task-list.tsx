@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useDraggable } from "@dnd-kit/core";
 import type { Subtask } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
+import { DragHandle } from "./drag-handle";
 import { dispatchShortcut, EmptyState } from "./empty-state";
 import { SectionHeader } from "./section-header";
 import { formatTaskDue, TaskDetailExpansion } from "./task-detail-expansion";
@@ -33,15 +35,40 @@ function PersonalTaskRow({
     reschedule,
   } = useTaskRowActions(t);
 
+  const dragDisabled = t.source === "todoist" && t.hasRecurringTag;
+  const {
+    attributes: dragAttributes,
+    listeners: dragListeners,
+    setNodeRef: setDraggableRef,
+    isDragging,
+  } = useDraggable({
+    id: t.key,
+    data: { task: t },
+    disabled: dragDisabled,
+  });
+
   return (
     <li
-      className="group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50 focus-within:bg-bg-elevated/40"
+      ref={setDraggableRef}
+      className={cn(
+        "group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50 focus-within:bg-bg-elevated/40",
+        isDragging && "opacity-50",
+      )}
       onKeyDown={(e) =>
         handleRowKeyDown(e, { toggleDone, reschedule, setExpanded, canToggle, canReschedule })
       }
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          {!dragDisabled && (
+            <DragHandle
+              {...dragAttributes}
+              {...dragListeners}
+              isDragging={isDragging}
+              className="mt-1"
+            />
+          )}
+          {dragDisabled && <span aria-hidden className="mt-1 w-[10px] shrink-0" />}
           <button
             type="button"
             onClick={toggleDone}

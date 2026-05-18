@@ -19,6 +19,7 @@ import { PersonalTaskList } from "./personal-task-list";
 import { Projects } from "./projects";
 import { ShortcutHelpOverlay } from "./shortcut-help-overlay";
 import { SyncStatusProvider } from "./sync-status-context";
+import { TaskDragProvider } from "./task-drag-provider";
 import { TaskList } from "./task-list";
 import { TaskSectionShortcut } from "./task-section-shortcut";
 import {
@@ -73,6 +74,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
         <Next3Days groups={data.next3Days} />
       </View>
 
+      <TaskDragProvider>
       <div
         className={cn(
           "grid min-h-0 flex-1 grid-cols-1 gap-x-6 px-4 sm:px-6",
@@ -138,6 +140,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
           />
         </View>
       </div>
+      </TaskDragProvider>
 
       <FooterStrip initialNow={data.now} lastSyncAt={data.lastSyncAt} />
       <ShortcutHelpOverlay />

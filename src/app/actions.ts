@@ -27,6 +27,7 @@ import {
   updateNotionFocus,
   updateNotionProjectSubtask,
   updateNotionTaskDate,
+  updateNotionTaskParent,
   updateNotionTripDates,
   updateNotionTodoStatus,
 } from "@/lib/sync/notion";
@@ -359,6 +360,84 @@ export async function pushTodoistTaskToNotionAction(args: {
     await pushTodoistTaskToNotion(args.todoistTaskId, args.notionParentPageId);
     return { ok: true };
   } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function moveTaskToProjectAction(args: {
+  notionPageId: string | null;
+  todoistTaskId: string | null;
+  source: "notion" | "todoist" | "both";
+  currentParentPageId: string | null;
+  targetParentPageId: string;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.targetParentPageId) return { ok: false, error: "Missing target project" };
+
+  if (args.currentParentPageId === args.targetParentPageId) {
+    return { ok: true };
+  }
+
+  if (args.source === "todoist") {
+    if (!args.todoistTaskId) return { ok: false, error: "Missing Todoist task" };
+    if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+    try {
+      await pushTodoistTaskToNotion(args.todoistTaskId, args.targetParentPageId);
+      await logAudit({ source: "dashboard", op: "move_task_to_project", payload: args });
+      return { ok: true };
+    } catch (e) {
+      await logAudit({
+        source: "dashboard",
+        op: "move_task_to_project_error",
+        payload: args,
+        error: (e as Error).message,
+      });
+      return { ok: false, error: (e as Error).message };
+    }
+  }
+
+  if (!args.notionPageId) return { ok: false, error: "Missing Notion page" };
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  let pendingLinkId: string | null = null;
+  try {
+    const [link] = await db
+      .select()
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
+    if (link) {
+      pendingLinkId = link.id;
+      await db
+        .update(schema.taskLinks)
+        .set({ pendingOrigin: "dashboard" })
+        .where(eq(schema.taskLinks.id, link.id));
+    }
+
+    await updateNotionTaskParent(args.notionPageId, args.targetParentPageId);
+
+    if (pendingLinkId) {
+      await db
+        .update(schema.taskLinks)
+        .set({ pendingOrigin: null })
+        .where(eq(schema.taskLinks.id, pendingLinkId));
+    }
+
+    await logAudit({ source: "dashboard", op: "move_task_to_project", payload: args });
+    return { ok: true };
+  } catch (e) {
+    if (pendingLinkId) {
+      await db
+        .update(schema.taskLinks)
+        .set({ pendingOrigin: null })
+        .where(eq(schema.taskLinks.id, pendingLinkId));
+    }
+    await logAudit({
+      source: "dashboard",
+      op: "move_task_to_project_error",
+      payload: args,
+      error: (e as Error).message,
+    });
     return { ok: false, error: (e as Error).message };
   }
 }

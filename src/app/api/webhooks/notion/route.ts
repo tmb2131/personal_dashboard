@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { after } from "next/server";
 import crypto from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
@@ -14,6 +15,7 @@ import {
 } from "@/lib/sync/webhook-utils";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
@@ -88,11 +90,10 @@ export async function POST(req: NextRequest) {
     payload: { fingerprint, eventId: eventIds[0] ?? null, eventIds, pageIds },
   });
 
-  runNotionWebhookWork({
-    pageIds,
-    eventIds,
-    fingerprint,
-  });
+  // `after()` runs the callback after the response ships but keeps the function
+  // alive via Vercel's `waitUntil` — replaces the old fire-and-forget pattern that
+  // could be cut off mid-flight.
+  after(() => runNotionWebhookWork({ pageIds, eventIds, fingerprint }));
 
   return NextResponse.json({ ok: true });
 }
@@ -102,7 +103,7 @@ function safeEqual(a: string, b: string) {
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
-function runNotionWebhookWork({
+async function runNotionWebhookWork({
   pageIds,
   eventIds,
   fingerprint,
@@ -112,55 +113,75 @@ function runNotionWebhookWork({
   fingerprint: string;
 }) {
   const limitedPageIds = pageIds.slice(0, 40);
-  void Promise.resolve().then(async () => {
+  await logAudit({
+    source: "webhook-notion",
+    op: "processing_started",
+    payload: {
+      fingerprint,
+      eventId: eventIds[0] ?? null,
+      eventIds,
+      pageIds: limitedPageIds,
+      droppedPageIds: Math.max(pageIds.length - limitedPageIds.length, 0),
+    },
+  });
+
+  // No token → nothing meaningful we can do. Skip the full-sync fallback.
+  if (!process.env.NOTION_TOKEN) {
     await logAudit({
       source: "webhook-notion",
-      op: "processing_started",
-      payload: {
-        fingerprint,
-        eventId: eventIds[0] ?? null,
-        eventIds,
-        pageIds: limitedPageIds,
-        droppedPageIds: Math.max(pageIds.length - limitedPageIds.length, 0),
-      },
+      op: "skipped_no_token",
+      payload: { fingerprint, eventId: eventIds[0] ?? null, pageIds: limitedPageIds },
     });
+    return;
+  }
 
-    try {
-      if (limitedPageIds.length && process.env.NOTION_TOKEN) {
-        await syncNotionEntitiesByIds(limitedPageIds);
-        for (const id of limitedPageIds) {
-          try {
-            await mirrorTodoistFromNotion(id);
-          } catch (e) {
-            await logAudit({
-              source: "webhook-notion",
-              op: "mirror_error",
-              payload: { id, fingerprint, eventId: eventIds[0] ?? null },
-              error: (e as Error).message,
-            });
-          }
+  try {
+    if (limitedPageIds.length) {
+      const result = await syncNotionEntitiesByIds(limitedPageIds);
+      for (const id of limitedPageIds) {
+        try {
+          await mirrorTodoistFromNotion(id);
+        } catch (e) {
+          await logAudit({
+            source: "webhook-notion",
+            op: "mirror_error",
+            payload: { id, fingerprint, eventId: eventIds[0] ?? null },
+            error: (e as Error).message,
+          });
         }
-        await logAudit({
-          source: "webhook-notion",
-          op: "incremental",
-          payload: { pageIds: limitedPageIds, fingerprint, eventId: eventIds[0] ?? null },
-        });
-      } else {
-        await syncNotion();
-        await logAudit({
-          source: "webhook-notion",
-          op: limitedPageIds.length ? "full_sync_no_token" : "full_sync_fallback",
-          payload: { pageIds: limitedPageIds, fingerprint, eventId: eventIds[0] ?? null },
-        });
       }
-    } catch (e) {
-      const err = (e as Error).message;
       await logAudit({
         source: "webhook-notion",
-        op: "incremental_error",
-        payload: { fingerprint, eventId: eventIds[0] ?? null },
-        error: err,
+        op: "incremental",
+        payload: {
+          pageIds: limitedPageIds,
+          fingerprint,
+          eventId: eventIds[0] ?? null,
+          todos: result.todos,
+          categories: result.categories,
+          perPageErrors: result.errors,
+        },
       });
+    } else {
+      // Structural event with no page IDs — fall back to a full sync to pick up the change.
+      await syncNotion();
+      await logAudit({
+        source: "webhook-notion",
+        op: "full_sync_fallback",
+        payload: { fingerprint, eventId: eventIds[0] ?? null },
+      });
+    }
+  } catch (e) {
+    // syncNotionEntitiesByIds swallows per-page errors, so reaching here means a
+    // catastrophic failure (DB, auth, etc.). Only then do we try a full re-pull.
+    const err = (e as Error).message;
+    await logAudit({
+      source: "webhook-notion",
+      op: "incremental_error",
+      payload: { fingerprint, eventId: eventIds[0] ?? null, pageIds: limitedPageIds },
+      error: err,
+    });
+    if (limitedPageIds.length === 0) {
       try {
         await syncNotion();
         await logAudit({
@@ -177,5 +198,5 @@ function runNotionWebhookWork({
         });
       }
     }
-  });
+  }
 }

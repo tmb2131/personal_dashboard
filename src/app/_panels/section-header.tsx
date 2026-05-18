@@ -81,7 +81,7 @@ function SourceFreshness({
       title={tooltip}
       className={cn(
         "inline-flex items-center gap-1.5 text-fg-subtle",
-        hasError && "text-red-400",
+        hasError && "text-danger",
       )}
     >
       <span

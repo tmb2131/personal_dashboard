@@ -264,7 +264,7 @@ export function ProjectSubtaskPlanner({
           Add
         </button>
       </form>
-      {taskError && <div className="mt-1 text-[11px] text-red-500">{taskError}</div>}
+      {taskError && <div className="mt-1 text-[11px] text-danger">{taskError}</div>}
     </div>
   );
 }

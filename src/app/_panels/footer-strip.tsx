@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { loadStoredTheme, toggleTheme } from "@/lib/theme";
 import { isEditableTarget } from "@/lib/utils";
+import { HiddenSectionsMenu } from "./hidden-sections-menu";
 import { ManualSyncButton } from "./manual-sync-button";
 import { ReconcileButton } from "./reconcile-button";
 import { useSyncStatus } from "./sync-status-context";
@@ -81,6 +82,7 @@ export function FooterStrip({
       <span>·</span>
       <ShortcutsHint />
       <ThemeToggleButton variant="label" />
+      <HiddenSectionsMenu />
 
       <span className="font-serif text-fg-muted italic sm:ml-auto">{dateLabel}</span>
     </footer>

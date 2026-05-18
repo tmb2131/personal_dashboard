@@ -17,6 +17,7 @@ import { LifeAreas } from "./life-areas";
 import { Next3Days } from "./next-3-days";
 import { PersonalTaskList } from "./personal-task-list";
 import { Projects } from "./projects";
+import { SectionVisibilityProvider } from "./section-visibility-context";
 import { ShortcutHelpOverlay } from "./shortcut-help-overlay";
 import { SyncStatusProvider } from "./sync-status-context";
 import { TaskDragProvider } from "./task-drag-provider";
@@ -154,10 +155,12 @@ export function DashboardClient({ data }: { data: DashboardData }) {
     <SyncStatusProvider>
       <DashboardMetaProvider meta={data.meta}>
         <TodayRecurringTasksProvider>
-          <AutoTodoistSync />
-          <DashboardViewProvider>
-            <DashboardBody data={data} />
-          </DashboardViewProvider>
+          <SectionVisibilityProvider>
+            <AutoTodoistSync />
+            <DashboardViewProvider>
+              <DashboardBody data={data} />
+            </DashboardViewProvider>
+          </SectionVisibilityProvider>
         </TodayRecurringTasksProvider>
       </DashboardMetaProvider>
     </SyncStatusProvider>

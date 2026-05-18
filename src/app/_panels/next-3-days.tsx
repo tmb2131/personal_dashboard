@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { formatTimeWithSuffix } from "@/lib/utils";
 import type { DayGroupedEvents } from "@/lib/dashboard-data";
+import { SectionCollapseControls } from "./section-collapse-controls";
 import { SectionHeader } from "./section-header";
+import { useSectionVisibility } from "./section-visibility-context";
 
 const GCAL_DAY_URL = "https://calendar.google.com/calendar/u/0/r/day";
 
@@ -19,6 +21,7 @@ function locationFor(e: DayGroupedEvents["events"][number]): string {
 }
 
 export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
+  const { collapsed, hidden } = useSectionVisibility("next-3-days");
   const canSwipe = groups.length > 1;
   const swipeHintKey = "next3days-swipe-hint-dismissed";
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -143,6 +146,8 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
     </div>
   );
 
+  if (hidden) return null;
+
   return (
     <section id="next-3-days" className="border-t border-border scroll-mt-6">
       <SectionHeader
@@ -151,9 +156,16 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
         count={total}
         source="google cal"
         sourceKey="gcal"
-      />
+      >
+        <SectionCollapseControls
+          sectionId="next-3-days"
+          bodyId="next-3-days-body"
+          label="Next 3 Days"
+        />
+      </SectionHeader>
 
-      <div className="px-4 pb-4 sm:px-5">
+      {!collapsed && (
+      <div id="next-3-days-body" className="px-4 pb-4 sm:px-5">
         <div className="md:hidden">
           <div className="mb-2.5 flex gap-1.5 overflow-x-auto pb-1">
             {groups.map((g, idx) => (
@@ -202,6 +214,7 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">{groups.map((g) => renderDayCard(g))}</div>
         </div>
       </div>
+      )}
     </section>
   );
 }

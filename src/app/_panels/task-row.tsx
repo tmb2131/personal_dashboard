@@ -2,12 +2,14 @@
 
 import { useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useDraggable } from "@dnd-kit/core";
 import { categoryDot, cn, isEditableTarget } from "@/lib/utils";
 import type { Subtask } from "@/lib/dashboard-data";
 import {
   pushNotionTaskToTodoistAction,
   pushTodoistTaskToNotionAction,
 } from "../actions";
+import { DragHandle } from "./drag-handle";
 import { TaskDetailExpansion } from "./task-detail-expansion";
 import { RESCHEDULE_PRESETS, useTaskRowActions } from "./use-task-row-actions";
 
@@ -38,6 +40,18 @@ export function TaskRow({
   const [selectedParent, setSelectedParent] = useState("");
   const [showNotionProjectSelector, setShowNotionProjectSelector] = useState(false);
   const [crossPostPending, startCrossPostTransition] = useTransition();
+
+  const dragDisabled = t.source === "todoist" && t.hasRecurringTag;
+  const {
+    attributes: dragAttributes,
+    listeners: dragListeners,
+    setNodeRef: setDraggableRef,
+    isDragging,
+  } = useDraggable({
+    id: t.key,
+    data: { task: t },
+    disabled: dragDisabled,
+  });
 
   const resolvedNotionParent =
     notionProjectPicklist.find((p) => p.id === selectedParent)?.id
@@ -88,11 +102,24 @@ export function TaskRow({
 
   return (
     <li
+      ref={setDraggableRef}
       data-task-row
-      className="group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50 focus-within:bg-bg-elevated/40"
+      className={cn(
+        "group rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50 focus-within:bg-bg-elevated/40",
+        isDragging && "opacity-50",
+      )}
       onKeyDown={(e) => handleRowKeyDown(e, { toggleDone, reschedule, setExpanded, canToggle, canReschedule })}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2">
+      {!dragDisabled && (
+        <DragHandle
+          {...dragAttributes}
+          {...dragListeners}
+          isDragging={isDragging}
+          className="mt-1"
+        />
+      )}
+      {dragDisabled && <span aria-hidden className="mt-1 w-[10px] shrink-0" />}
       <button
         type="button"
         onClick={toggleDone}

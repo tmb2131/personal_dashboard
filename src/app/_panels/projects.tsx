@@ -4,6 +4,7 @@ import { categoryDot, cn, shortCategoryLabel } from "@/lib/utils";
 import type { Project, ProjectGroups } from "@/lib/dashboard-data";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState, useTransition } from "react";
+import { useDroppable } from "@dnd-kit/core";
 import {
   createProjectAction,
   setProjectFocusAction,
@@ -91,6 +92,12 @@ function ProjectRow({ p }: { p: Project }) {
   const [statusPending, startStatusTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
 
+  const { setNodeRef: setDroppableRef, isOver, active } = useDroppable({
+    id: `project-${p.id}`,
+    data: { targetParentPageId: p.id },
+  });
+  const isActiveDrag = Boolean(active);
+
   const isFocus = focusOverride ?? (p.focus === "Yes");
   const currentStatus: ProjectStatus =
     statusOverride ?? ((p.status as ProjectStatus | null) ?? "Not started");
@@ -152,7 +159,14 @@ function ProjectRow({ p }: { p: Project }) {
   };
 
   return (
-    <li className="rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50">
+    <li
+      ref={setDroppableRef}
+      className={cn(
+        "rounded-lg px-5 py-2.5 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50",
+        isActiveDrag && "ring-1 ring-border-strong/40",
+        isOver && "bg-accent-soft ring-1 ring-accent",
+      )}
+    >
       <div className="flex items-center gap-2.5">
         <button
           type="button"

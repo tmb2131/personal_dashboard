@@ -3,9 +3,11 @@
 import type { FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { useDroppable } from "@dnd-kit/core";
 import { createTripAction, setTripDatesAction } from "@/app/actions";
 import type { Project } from "@/lib/dashboard-data";
 import { formatDateOnlyLocal, parseDateOnlyLocal } from "@/lib/date-utils";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "./empty-state";
 import { ProjectSubtaskPlanner } from "./project-subtask-planner";
 import { SectionHeader } from "./section-header";
@@ -280,6 +282,11 @@ function TripDatesEditor({ trip }: { trip: Project }) {
 
 function TripRow({ trip, now }: { trip: Project; now: Date }) {
   const [expanded, setExpanded] = useState(false);
+  const { setNodeRef: setDroppableRef, isOver, active } = useDroppable({
+    id: `trip-${trip.id}`,
+    data: { targetParentPageId: trip.id },
+  });
+  const isActiveDrag = Boolean(active);
 
   const days = trip.dateStart ? Math.max(0, daysUntil(trip.dateStart, now)) : null;
   const isBooked = trip.status === "Done";
@@ -301,7 +308,14 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
   });
 
   return (
-    <li className="rounded-lg px-5 py-3 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50">
+    <li
+      ref={setDroppableRef}
+      className={cn(
+        "rounded-lg px-5 py-3 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50",
+        isActiveDrag && "ring-1 ring-border-strong/40",
+        isOver && "bg-accent-soft ring-1 ring-accent",
+      )}
+    >
       <div className="flex w-full items-start gap-4">
         <button
           type="button"

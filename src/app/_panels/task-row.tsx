@@ -208,7 +208,7 @@ export function TaskRow({
         {(moveMessage || moveError) && (
           <div className="mt-0.5 text-[10px]">
             {moveError ? (
-              <span className="text-red-500/90">{moveError}</span>
+              <span className="text-danger">{moveError}</span>
             ) : (
               <span aria-live="polite" className="text-fg-subtle">{moveMessage}</span>
             )}
@@ -270,7 +270,7 @@ export function TaskRow({
               </>
             )}
             {crossPostError && (
-              <span className="text-[11px] text-red-500/90">{crossPostError}</span>
+              <span className="text-[11px] text-danger">{crossPostError}</span>
             )}
           </div>
         )}

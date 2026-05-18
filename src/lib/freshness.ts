@@ -11,10 +11,10 @@ export function freshnessFor(health: SourceHealth, now: Date): Freshness {
 }
 
 export function dotClassFor(freshness: Freshness, hasError: boolean): string {
-  if (hasError) return "bg-red-500";
+  if (hasError) return "bg-danger";
   if (freshness === "fresh") return "bg-done";
   if (freshness === "recent") return "bg-done/60";
-  if (freshness === "stale") return "bg-amber-400/80";
+  if (freshness === "stale") return "bg-warning/80";
   return "bg-fg-subtle/40";
 }
 

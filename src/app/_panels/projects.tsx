@@ -203,7 +203,7 @@ function ProjectRow({ p }: { p: Project }) {
         </span>
       </div>
       {statusError && (
-        <div className="mt-1 ml-[44px] text-[11px] text-red-500">{statusError}</div>
+        <div className="mt-1 ml-[44px] text-[11px] text-danger">{statusError}</div>
       )}
       <div className="mt-1.5 ml-[44px]">
         {nextStep ? (
@@ -357,7 +357,7 @@ function NewProjectRow({
           Cancel
         </button>
       </div>
-      {error && <div className="text-[11px] text-red-500">{error}</div>}
+      {error && <div className="text-[11px] text-danger">{error}</div>}
     </form>
   );
 }

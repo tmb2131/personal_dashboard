@@ -45,7 +45,7 @@ export function ShortcutHelpOverlay() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-lg border border-border bg-bg-elevated p-5 shadow-lg"
+        className="w-full max-w-md rounded-lg border border-border-strong bg-bg-elevated p-5"
       >
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-[11px] font-medium uppercase tracking-[0.14em] text-fg">

@@ -59,10 +59,10 @@ export function ReconcileButton({ className }: { className?: string }) {
 
   const toastStyle =
     toast?.kind === "success"
-      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+      ? "border-success/40 bg-success/10 text-success"
       : toast?.kind === "warning"
-        ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
-        : "border-red-500/40 bg-red-500/10 text-red-200";
+        ? "border-warning/40 bg-warning/10 text-warning"
+        : "border-danger/40 bg-danger/10 text-danger";
 
   return (
     <>

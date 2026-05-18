@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { cn, formatTimeWithSuffix } from "@/lib/utils";
 import type { DashboardMeta, SourceHealth } from "@/lib/dashboard-data";
-import { dotClassFor, formatAgo, freshnessFor } from "@/lib/freshness";
+import { dotClassFor, formatAgo, freshnessFor, type Freshness } from "@/lib/freshness";
 import { ManualSyncButton } from "./manual-sync-button";
 import { useSyncStatus } from "./sync-status-context";
 import { ThemeToggleButton } from "./theme-toggle-button";
@@ -54,7 +54,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
         </div>
       </div>
 
-      <div className="mt-3 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px] text-fg-muted sm:mt-0 sm:ml-2">
+      <div className="mt-3 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px] tabular-nums text-fg-muted sm:mt-0 sm:ml-2">
         <span>{pluralise(todayOpenDisplayed, "open", "open")}</span>
         <span className="text-fg-subtle">·</span>
         <span>{pluralise(meta.todayMeetingCount, "meeting", "meetings")}</span>
@@ -84,25 +84,10 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
       <div className="ml-auto hidden items-center gap-3 text-[13px] sm:flex">
         <ManualSyncButton variant="icon" className="mr-1" />
         <span className="tabular-nums text-fg-muted">{timeStr}</span>
-        <SourcePill
-          label="Calendar"
-          health={meta.sources.gcal}
+        <SourceHealthGroup
+          sources={meta.sources}
+          errorBySource={errorBySource}
           inFlight={inFlight}
-          error={errorBySource.gcal}
-          now={now}
-        />
-        <SourcePill
-          label="Notion"
-          health={meta.sources.notion}
-          inFlight={inFlight}
-          error={errorBySource.notion}
-          now={now}
-        />
-        <SourcePill
-          label="Todoist"
-          health={meta.sources.todoist}
-          inFlight={inFlight}
-          error={errorBySource.todoist}
           now={now}
         />
       </div>
@@ -110,42 +95,99 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
   );
 }
 
-function SourcePill({
-  label,
-  health,
-  inFlight,
-  error,
-  now,
-}: {
+const FRESHNESS_RANK: Record<Freshness, number> = {
+  fresh: 0,
+  recent: 1,
+  unknown: 2,
+  stale: 3,
+};
+
+type SourceItem = {
+  key: "gcal" | "notion" | "todoist";
   label: string;
   health: SourceHealth;
-  inFlight: boolean;
   error?: string;
+};
+
+function SourceHealthGroup({
+  sources,
+  errorBySource,
+  inFlight,
+  now,
+}: {
+  sources: DashboardMeta["sources"];
+  errorBySource: { gcal?: string; notion?: string; todoist?: string };
+  inFlight: boolean;
   now: Date;
 }) {
-  const fresh = freshnessFor(health, now);
-  const hasError = Boolean(error);
-  const dotClass = dotClassFor(fresh, hasError);
-  const ago = formatAgo(health.lastSyncAt, now);
-  const title = hasError ? `${label}: ${error}` : `${label} · ${ago}`;
+  const items: SourceItem[] = [
+    { key: "gcal", label: "Calendar", health: sources.gcal, error: errorBySource.gcal },
+    { key: "notion", label: "Notion", health: sources.notion, error: errorBySource.notion },
+    { key: "todoist", label: "Todoist", health: sources.todoist, error: errorBySource.todoist },
+  ];
+  const rank = (item: SourceItem) =>
+    item.error ? 99 : FRESHNESS_RANK[freshnessFor(item.health, now)];
+  const worst = items.reduce((a, b) => (rank(b) > rank(a) ? b : a), items[0]);
+  const worstHasError = Boolean(worst.error);
+  const worstDot = dotClassFor(freshnessFor(worst.health, now), worstHasError);
+  const oldest =
+    items
+      .map((i) => i.health.lastSyncAt)
+      .filter((d): d is Date => Boolean(d))
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+  const agoLabel = formatAgo(oldest, now);
+  const anyError = items.some((i) => i.error);
+  const errored = items.filter((i) => i.error);
+  const summaryLabel = anyError
+    ? `Sync error: ${errored.map((i) => i.label).join(", ")}`
+    : `All sources synced — ${agoLabel}`;
+
   return (
-    <span
-      title={title}
-      aria-label={title}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full bg-pill-bg px-2.5 py-0.5 text-[11px] text-pill-fg transition-opacity duration-200 ease-out motion-reduce:duration-0 hover:opacity-90",
-        hasError && "text-red-300",
-      )}
-    >
-      <span
+    <details className="group relative border-l border-border pl-3">
+      <summary
+        aria-label={summaryLabel}
         className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          dotClass,
-          inFlight && "motion-safe:animate-pulse",
+          "inline-flex cursor-pointer list-none items-center gap-1.5 text-[11px] tabular-nums text-fg-muted",
+          "[&::-webkit-details-marker]:hidden",
+          "transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 rounded-sm",
+          anyError && "text-danger",
         )}
-      />
-      {label}
-    </span>
+      >
+        <span
+          className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            worstDot,
+            inFlight && "motion-safe:animate-pulse",
+          )}
+        />
+        <span>{agoLabel}</span>
+      </summary>
+      <div
+        role="group"
+        aria-label="Sync status by source"
+        className="absolute right-0 z-20 mt-2 w-56 rounded-md border border-border-strong bg-bg-elevated p-2 text-[11px]"
+      >
+        {items.map((item) => {
+          const fresh = freshnessFor(item.health, now);
+          const has = Boolean(item.error);
+          return (
+            <div key={item.key} className="py-0.5">
+              <div className="flex items-center gap-2">
+                <span className={cn("h-1.5 w-1.5 rounded-full", dotClassFor(fresh, has))} />
+                <span className={cn("text-fg", has && "text-danger")}>{item.label}</span>
+                <span className="ml-auto tabular-nums text-fg-subtle">
+                  {formatAgo(item.health.lastSyncAt, now)}
+                </span>
+              </div>
+              {has ? (
+                <div className="mt-0.5 pl-3.5 text-danger">{item.error}</div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 

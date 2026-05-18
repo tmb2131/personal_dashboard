@@ -156,7 +156,7 @@ function AddTripRow({ autoOpen = false }: { autoOpen?: boolean }) {
         </button>
       </div>
       {(error || rangeErr) && (
-        <div className="text-[11px] text-red-500">{error ?? rangeErr}</div>
+        <div className="text-[11px] text-danger">{error ?? rangeErr}</div>
       )}
     </form>
   );
@@ -246,7 +246,7 @@ function TripDatesEditor({ trip }: { trip: Project }) {
           Cancel
         </button>
         {(error || rangeErr) && (
-          <span className="w-full text-[11px] text-red-500">{error ?? rangeErr}</span>
+          <span className="w-full text-[11px] text-danger">{error ?? rangeErr}</span>
         )}
       </form>
     );

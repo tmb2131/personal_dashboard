@@ -280,7 +280,7 @@ export function TaskDetailExpansion({
         </div>
       )}
       {(error || extraError) && (
-        <div className="text-[11px] text-red-500/90">{error ?? extraError}</div>
+        <div className="text-[11px] text-danger">{error ?? extraError}</div>
       )}
     </div>
   );

@@ -136,7 +136,7 @@ function PersonalTaskRow({
             {(moveMessage || moveError) && (
               <div className="mt-0.5 text-[10px]">
                 {moveError ? (
-                  <span className="text-red-500/90">{moveError}</span>
+                  <span className="text-danger">{moveError}</span>
                 ) : (
                   <span aria-live="polite" className="text-fg-subtle">{moveMessage}</span>
                 )}

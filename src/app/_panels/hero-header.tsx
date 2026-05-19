@@ -5,6 +5,7 @@ import { cn, formatTimeWithSuffix } from "@/lib/utils";
 import type { DashboardMeta, SourceHealth } from "@/lib/dashboard-data";
 import { dotClassFor, formatAgo, freshnessFor, type Freshness } from "@/lib/freshness";
 import { ManualSyncButton } from "./manual-sync-button";
+import { SignOutButton } from "./sign-out-button";
 import { useSyncStatus } from "./sync-status-context";
 import { ThemeToggleButton } from "./theme-toggle-button";
 import { useTodayRecurringTasksVisibility } from "./today-recurring-tasks-context";
@@ -49,6 +50,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
 
         <div className="flex shrink-0 items-center gap-2 pt-0.5 text-[13px] sm:hidden">
           <ThemeToggleButton variant="icon" />
+          <SignOutButton />
           <ManualSyncButton variant="icon" />
           <span className="tabular-nums text-fg-muted">{timeStr}</span>
         </div>
@@ -82,6 +84,7 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
       </div>
 
       <div className="ml-auto hidden items-center gap-3 text-[13px] sm:flex">
+        <SignOutButton />
         <ManualSyncButton variant="icon" className="mr-1" />
         <span className="tabular-nums text-fg-muted">{timeStr}</span>
         <SourceHealthGroup

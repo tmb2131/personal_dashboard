@@ -4,7 +4,11 @@ import type { FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { createTripAction, setTripDatesAction } from "@/app/actions";
+import {
+  createTripAction,
+  setProjectStatusAction,
+  setTripDatesAction,
+} from "@/app/actions";
 import type { Project } from "@/lib/dashboard-data";
 import { formatDateOnlyLocal, parseDateOnlyLocal } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
@@ -281,7 +285,10 @@ function TripDatesEditor({ trip }: { trip: Project }) {
 }
 
 function TripRow({ trip, now }: { trip: Project; now: Date }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
+  const [statusOverride, setStatusOverride] = useState<boolean | null>(null);
+  const [statusPending, startStatusTransition] = useTransition();
   const { setNodeRef: setDroppableRef, isOver, active } = useDroppable({
     id: `trip-${trip.id}`,
     data: { targetParentPageId: trip.id },
@@ -289,7 +296,25 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
   const isActiveDrag = Boolean(active);
 
   const days = trip.dateStart ? Math.max(0, daysUntil(trip.dateStart, now)) : null;
-  const isBooked = trip.status === "Done";
+  const isBooked = statusOverride ?? (trip.status === "Done");
+
+  const handleStatusChange = (nextBooked: boolean) => {
+    if (nextBooked === isBooked) return;
+    const previous = isBooked;
+    setStatusOverride(nextBooked);
+    startStatusTransition(async () => {
+      const result = await setProjectStatusAction({
+        notionPageId: trip.id,
+        status: nextBooked ? "Done" : "Not started",
+      });
+      if (!result.ok) {
+        setStatusOverride(previous);
+        return;
+      }
+      setStatusOverride(null);
+      router.refresh();
+    });
+  };
   const fallbackSubtask = [...trip.subtasks]
     .filter((s) => !s.done)
     .sort((a, b) => {
@@ -330,16 +355,21 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
         </button>
 
         <div className="min-w-0 flex-1 space-y-1">
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-baseline gap-2 text-left transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted"
-            aria-expanded={expanded}
-          >
-            <span className="min-w-0 truncate text-[14px] font-medium">{trip.title}</span>
-            {isBooked && <Pill>BOOKED</Pill>}
-            {!isBooked && <Pill>PLANNING</Pill>}
-          </button>
+          <div className="flex w-full items-baseline gap-2">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex min-w-0 flex-1 items-baseline text-left transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted"
+              aria-expanded={expanded}
+            >
+              <span className="min-w-0 truncate text-[14px] font-medium">{trip.title}</span>
+            </button>
+            <TripStatusBadge
+              booked={isBooked}
+              disabled={statusPending}
+              onChange={handleStatusChange}
+            />
+          </div>
 
           <TripDatesEditor trip={trip} />
 
@@ -412,6 +442,40 @@ function Pill({ children }: { children: ReactNode }) {
   return (
     <span className="ml-auto inline-flex items-center rounded bg-pill-bg px-1.5 py-0.5 text-[10px] tracking-[0.14em] text-pill-fg">
       {children}
+    </span>
+  );
+}
+
+function TripStatusBadge({
+  booked,
+  disabled,
+  onChange,
+}: {
+  booked: boolean;
+  disabled: boolean;
+  onChange: (nextBooked: boolean) => void;
+}) {
+  return (
+    <span className="relative inline-flex shrink-0">
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none inline-flex items-center rounded bg-pill-bg px-1.5 py-0.5 text-[10px] tracking-[0.14em] text-pill-fg",
+          disabled && "opacity-60",
+        )}
+      >
+        {booked ? "BOOKED" : "PLANNING"}
+      </span>
+      <select
+        value={booked ? "booked" : "planning"}
+        onChange={(e) => onChange(e.target.value === "booked")}
+        disabled={disabled}
+        aria-label="Trip status"
+        className="absolute inset-0 cursor-pointer opacity-0"
+      >
+        <option value="planning">PLANNING</option>
+        <option value="booked">BOOKED</option>
+      </select>
     </span>
   );
 }

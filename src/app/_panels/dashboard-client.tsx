@@ -42,7 +42,10 @@ function View({
 }) {
   const { activeView } = useDashboardView();
   const visible = show.includes(activeView) && when;
-  return <div className={cn(className, !visible && "hidden")}>{children}</div>;
+  // Unmount hidden panels so drag-and-drop IDs are not registered twice
+  // (e.g. dashboard + Next 7 Days vs the upcoming-only task list).
+  if (!visible) return null;
+  return <div className={className}>{children}</div>;
 }
 
 function DashboardBody({ data }: { data: DashboardData }) {

@@ -52,6 +52,13 @@ export function hashForPair(page: NotionPage, task: TodoistTask): string {
     deadline: page.deadline,
     priority: page.priority,
     categoryOrProjectId: page.categoryId ?? task.projectId ?? null,
+    todoist: {
+      content: task.content,
+      checked: task.checked,
+      dueDate: task.dueDate,
+      deadline: task.deadline,
+      priority: task.priority,
+    },
   });
 }
 

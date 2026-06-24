@@ -31,4 +31,41 @@ describe("sync mappings", () => {
     };
     expect(syncHash(args)).toBe(syncHash(args));
   });
+
+  it("busts the hash when the Todoist due date moves even if the Notion side is unchanged", () => {
+    // Reproduces the dashboard-stuck-on-today bug: the user reschedules a
+    // Todoist task (today -> Friday) but the mirrored Notion page is untouched,
+    // so the Notion-derived fields are identical for both hashes. The folded
+    // Todoist fields must still make the two hashes differ so the drift detector
+    // mirrors the new date into Notion instead of treating the pair as in-sync.
+    const notionSide = {
+      title: "Pay Liberty",
+      status: "Not started" as const,
+      date: new Date("2026-06-24T00:00:00.000Z"),
+      deadline: null,
+      priority: null,
+      categoryOrProjectId: "proj_1",
+    };
+    const before = syncHash({
+      ...notionSide,
+      todoist: {
+        content: "Pay Liberty",
+        checked: false,
+        dueDate: new Date("2026-06-24T00:00:00.000Z"),
+        deadline: null,
+        priority: 1,
+      },
+    });
+    const after = syncHash({
+      ...notionSide,
+      todoist: {
+        content: "Pay Liberty",
+        checked: false,
+        dueDate: new Date("2026-06-26T00:00:00.000Z"),
+        deadline: null,
+        priority: 1,
+      },
+    });
+    expect(after).not.toBe(before);
+  });
 });

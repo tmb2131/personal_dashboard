@@ -47,6 +47,21 @@ export function syncHash(args: {
   deadline: Date | null;
   priority: NotionPage["priority"] | null;
   categoryOrProjectId: string | null;
+  /**
+   * Todoist-side authoritative fields, folded into the hash so a change that
+   * originates in Todoist (e.g. a due date moved to another day) busts the hash
+   * even when the mirrored Notion page is untouched. Without this, the drift
+   * detector — which only ever saw the Notion side — treated such a pair as
+   * in-sync and never mirrored the change into Notion, so the dashboard kept
+   * showing the stale Notion date.
+   */
+  todoist?: {
+    content: string;
+    checked: boolean;
+    dueDate: Date | null;
+    deadline: Date | null;
+    priority: number;
+  };
 }): string {
   const parts = [
     args.title.trim().toLowerCase(),
@@ -56,6 +71,15 @@ export function syncHash(args: {
     args.priority ?? "",
     args.categoryOrProjectId ?? "",
   ];
+  if (args.todoist) {
+    parts.push(
+      args.todoist.content.trim().toLowerCase(),
+      args.todoist.checked ? "1" : "0",
+      args.todoist.dueDate?.toISOString() ?? "",
+      args.todoist.deadline?.toISOString() ?? "",
+      String(args.todoist.priority),
+    );
+  }
   // Lightweight hash; not cryptographic. djb2 variant.
   let h = 5381;
   const s = parts.join("");

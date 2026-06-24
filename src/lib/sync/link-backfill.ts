@@ -92,6 +92,13 @@ export async function writeProposedLinks(
           deadline: np.deadline,
           priority: np.priority,
           categoryOrProjectId: np.categoryId ?? tt.projectId ?? null,
+          todoist: {
+            content: tt.content,
+            checked: tt.checked,
+            dueDate: tt.dueDate,
+            deadline: tt.deadline,
+            priority: tt.priority,
+          },
         }),
         pendingOrigin: null,
       };

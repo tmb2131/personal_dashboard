@@ -2,21 +2,33 @@ import { logAudit } from "@/lib/sync/audit";
 import { mirrorNotionFromTodoist, repairRecurringTodoistLink } from "@/lib/sync/orchestrator";
 import type { SyncTodoistResult } from "@/lib/sync/todoist";
 
-export async function reconcileTodoistCompletionResult(
-  result: Pick<SyncTodoistResult, "completedTaskIds" | "completedRecurringTaskIds">,
+export async function reconcileTodoistSyncResult(
+  result: Pick<
+    SyncTodoistResult,
+    "changedTaskIds" | "completedTaskIds" | "completedRecurringTaskIds"
+  >,
   source: string,
 ) {
   let mirrored = 0;
   let repaired = 0;
 
-  for (const id of result.completedTaskIds) {
+  // Completions first (their mirror must run against the original task id before any
+  // recurring-link repair), then field edits (due date, title, priority) observed by the
+  // poll. Without the second loop, Todoist-side edits reach the local cache but never Notion.
+  const completed = new Set(result.completedTaskIds);
+  const toMirror = [
+    ...result.completedTaskIds,
+    ...result.changedTaskIds.filter((id) => !completed.has(id)),
+  ];
+
+  for (const id of toMirror) {
     try {
       await mirrorNotionFromTodoist(id);
       mirrored++;
     } catch (e) {
       await logAudit({
         source,
-        op: "mirror_completed_error",
+        op: "mirror_error",
         payload: { id },
         error: (e as Error).message,
       });

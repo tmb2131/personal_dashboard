@@ -123,6 +123,31 @@ function mapCategoryRow(
   };
 }
 
+function sameTime(a: Date | null, b: Date | null) {
+  return (a?.getTime() ?? null) === (b?.getTime() ?? null);
+}
+
+function notionTodoRowsMatch(existing: NotionPage, next: ReturnType<typeof mapTodoPageRow>) {
+  return (
+    existing.categoryId === next.categoryId &&
+    existing.title === next.title &&
+    existing.status === next.status &&
+    sameTime(existing.dateStart, next.dateStart) &&
+    sameTime(existing.dateEnd, next.dateEnd) &&
+    existing.dateIsDatetime === next.dateIsDatetime &&
+    sameTime(existing.deadline, next.deadline) &&
+    existing.priority === next.priority &&
+    existing.focus === next.focus &&
+    existing.tripStatus === next.tripStatus &&
+    existing.parentId === next.parentId &&
+    existing.keyNextStep === next.keyNextStep &&
+    existing.nextSteps === next.nextSteps &&
+    existing.notes === next.notes &&
+    existing.archived === next.archived &&
+    existing.ignore === next.ignore
+  );
+}
+
 type DataSourceQueryResp = {
   results: { id: string; archived: boolean; properties: AnyProp }[];
   next_cursor: string | null;
@@ -182,13 +207,23 @@ export async function syncNotion() {
   }
 
   if (todos.length) {
+    const existingPages = await db.select().from(schema.notionPages);
+    const existingPageById = new Map(existingPages.map((p) => [p.id, p]));
+    const pageRows = todos.map((p) =>
+      mapTodoPageRow({ id: p.id, archived: p.archived, properties: p.properties, raw: p }, now),
+    );
+    for (const row of pageRows) {
+      const existing = existingPageById.get(row.id);
+      // Unchanged row: keep its updatedAt (lastSyncedAt still advances). Reconcile
+      // tie-breaks conflicts by the newer-side-wins rule, so updatedAt must
+      // approximate when the page last changed, not when it was last polled.
+      if (existing && notionTodoRowsMatch(existing, row)) {
+        row.updatedAt = existing.updatedAt;
+      }
+    }
     await db
       .insert(schema.notionPages)
-      .values(
-        todos.map((p) =>
-          mapTodoPageRow({ id: p.id, archived: p.archived, properties: p.properties, raw: p }, now),
-        ),
-      )
+      .values(pageRows)
       .onConflictDoUpdate({
         target: schema.notionPages.id,
         set: {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { syncTodoist } from "@/lib/sync/todoist";
-import { reconcileTodoistCompletionResult } from "@/lib/sync/todoist-reconcile";
+import { reconcileTodoistSyncResult } from "@/lib/sync/todoist-reconcile";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -15,7 +15,7 @@ export async function POST() {
 
   try {
     const result = await syncTodoist();
-    const reconciliation = await reconcileTodoistCompletionResult(result, "todoist-auto-sync");
+    const reconciliation = await reconcileTodoistSyncResult(result, "todoist-auto-sync");
     const changed =
       result.changedTaskIds.length > 0 ||
       result.completedTaskIds.length > 0 ||

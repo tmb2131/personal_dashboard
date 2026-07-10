@@ -12,7 +12,7 @@ import {
   syncTodoistProjectsByIds,
   syncTodoistTasksByIds,
 } from "@/lib/sync/todoist";
-import { reconcileTodoistCompletionResult } from "@/lib/sync/todoist-reconcile";
+import { reconcileTodoistSyncResult } from "@/lib/sync/todoist-reconcile";
 import { MAX_WEBHOOK_BODY_BYTES, isProductionRuntime, webhookFingerprint } from "@/lib/sync/webhook-utils";
 
 export const dynamic = "force-dynamic";
@@ -118,7 +118,7 @@ async function runTodoistWebhookWork({
       if (!projectId || !process.env.TODOIST_TOKEN) {
         // No id to target / no creds — fall back to a full sync as last resort.
         const result = await syncTodoist();
-        await reconcileTodoistCompletionResult(result, "webhook-todoist");
+        await reconcileTodoistSyncResult(result, "webhook-todoist");
         await logAudit({
           source: "webhook-todoist",
           op: "full_sync_fallback",
@@ -149,7 +149,7 @@ async function runTodoistWebhookWork({
 
       if (!id || !process.env.TODOIST_TOKEN) {
         const result = await syncTodoist();
-        await reconcileTodoistCompletionResult(result, "webhook-todoist");
+        await reconcileTodoistSyncResult(result, "webhook-todoist");
         await logAudit({
           source: "webhook-todoist",
           op: "full_sync_fallback",
@@ -197,7 +197,7 @@ async function runTodoistWebhookWork({
     }
 
     const result = await syncTodoist();
-    await reconcileTodoistCompletionResult(result, "webhook-todoist");
+    await reconcileTodoistSyncResult(result, "webhook-todoist");
     await logAudit({
       source: "webhook-todoist",
       op: "full_sync_unknown_event",

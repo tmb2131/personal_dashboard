@@ -210,7 +210,14 @@ export async function syncTodoist(): Promise<SyncTodoistResult> {
   const taskRows = tasks.map((t) => mapTodoistTaskToRow(t, now));
   for (const row of taskRows) {
     const existing = existingTaskById.get(row.id);
-    if (!existing || !todoistRowsMatch(existing, row)) changedTaskIds.push(row.id);
+    if (!existing || !todoistRowsMatch(existing, row)) {
+      changedTaskIds.push(row.id);
+    } else {
+      // Unchanged row: keep its updatedAt. Reconcile tie-breaks conflicts by the
+      // newer-side-wins rule, so updatedAt must approximate when the task last
+      // changed, not when it was last polled.
+      row.updatedAt = existing.updatedAt;
+    }
   }
 
   if (taskRows.length) {

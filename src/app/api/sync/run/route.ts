@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { syncNotion } from "@/lib/sync/notion";
 import { syncTodoist, type SyncTodoistResult } from "@/lib/sync/todoist";
-import { reconcileTodoistCompletionResult } from "@/lib/sync/todoist-reconcile";
+import { reconcileTodoistSyncResult } from "@/lib/sync/todoist-reconcile";
 import { ensureGcalWatchesHealthy, syncGcal } from "@/lib/sync/gcal";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export async function POST() {
   ]);
   const todoistReconciliation =
     results[1].status === "fulfilled"
-      ? await reconcileTodoistCompletionResult(
+      ? await reconcileTodoistSyncResult(
           results[1].value as SyncTodoistResult,
           "manual-sync-todoist",
         )

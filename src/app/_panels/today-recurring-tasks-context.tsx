@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { flagCodec, usePersistedState } from "./use-persisted-state";
 
 const INLINE_STORAGE_KEY = "personal-dashboard-show-recurring-today-tasks";
 const SECTION_STORAGE_KEY = "personal-dashboard-show-today-recurring-section";
@@ -14,38 +15,17 @@ type TodayRecurringTasksContextValue = {
 
 const TodayRecurringTasksContext = createContext<TodayRecurringTasksContextValue | null>(null);
 
-function readStored(key: string, defaultValue: boolean): boolean {
-  if (typeof window === "undefined") return defaultValue;
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored == null) return defaultValue;
-    return stored === "1";
-  } catch {
-    return defaultValue;
-  }
-}
-
-function writeStored(key: string, value: boolean) {
-  try {
-    localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
-}
-
 export function TodayRecurringTasksProvider({ children }: { children: ReactNode }) {
-  const [showRecurringTodayTasks, setInlineState] = useState(() => readStored(INLINE_STORAGE_KEY, false));
-  const [showTodayRecurringSection, setSectionState] = useState(() => readStored(SECTION_STORAGE_KEY, true));
-
-  const setShowRecurringTodayTasks = useCallback((show: boolean) => {
-    setInlineState(show);
-    writeStored(INLINE_STORAGE_KEY, show);
-  }, []);
-
-  const setShowTodayRecurringSection = useCallback((show: boolean) => {
-    setSectionState(show);
-    writeStored(SECTION_STORAGE_KEY, show);
-  }, []);
+  const [showRecurringTodayTasks, setShowRecurringTodayTasks] = usePersistedState(
+    INLINE_STORAGE_KEY,
+    false,
+    flagCodec,
+  );
+  const [showTodayRecurringSection, setShowTodayRecurringSection] = usePersistedState(
+    SECTION_STORAGE_KEY,
+    true,
+    flagCodec,
+  );
 
   const value = useMemo(
     () => ({

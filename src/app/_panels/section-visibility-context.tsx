@@ -5,9 +5,9 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useState,
   type ReactNode,
 } from "react";
+import { jsonCodec, usePersistedState } from "./use-persisted-state";
 
 const COLLAPSED_STORAGE_KEY = "personal-dashboard-section-collapsed";
 const HIDDEN_STORAGE_KEY = "personal-dashboard-section-hidden";
@@ -23,6 +23,8 @@ export const COLLAPSIBLE_SECTIONS: readonly SectionMeta[] = [
 
 type FlagMap = Partial<Record<CollapsibleSectionId, boolean>>;
 
+const EMPTY_FLAGS: FlagMap = {};
+
 type SectionVisibilityContextValue = {
   collapsed: FlagMap;
   hidden: FlagMap;
@@ -35,85 +37,63 @@ type SectionVisibilityContextValue = {
 const SectionVisibilityContext =
   createContext<SectionVisibilityContextValue | null>(null);
 
-function readStored(key: string): FlagMap {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    const out: FlagMap = {};
-    for (const meta of COLLAPSIBLE_SECTIONS) {
-      const val = (parsed as Record<string, unknown>)[meta.id];
-      if (val === true) out[meta.id] = true;
-    }
-    return out;
-  } catch {
-    return {};
-  }
+function isFlagMap(value: unknown): value is FlagMap {
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value).every(
+    ([k, v]) => COLLAPSIBLE_SECTIONS.some((m) => m.id === k) && v === true,
+  );
 }
 
-function writeStored(key: string, value: FlagMap) {
-  try {
-    const trimmed: FlagMap = {};
-    for (const [k, v] of Object.entries(value)) {
-      if (v === true) trimmed[k as CollapsibleSectionId] = true;
-    }
-    if (Object.keys(trimmed).length === 0) {
-      localStorage.removeItem(key);
-    } else {
-      localStorage.setItem(key, JSON.stringify(trimmed));
-    }
-  } catch {
-    /* ignore */
-  }
-}
+// Only `true` entries are persisted, so a cleared flag disappears rather than
+// lingering as `false`.
+const flagMapCodec = jsonCodec(isFlagMap);
 
 export function SectionVisibilityProvider({ children }: { children: ReactNode }) {
-  const [collapsed, setCollapsed] = useState<FlagMap>(() =>
-    readStored(COLLAPSED_STORAGE_KEY),
+  const [collapsed, setCollapsedStored] = usePersistedState<FlagMap>(
+    COLLAPSED_STORAGE_KEY,
+    EMPTY_FLAGS,
+    flagMapCodec,
   );
-  const [hidden, setHidden] = useState<FlagMap>(() =>
-    readStored(HIDDEN_STORAGE_KEY),
+  const [hidden, setHiddenStored] = usePersistedState<FlagMap>(
+    HIDDEN_STORAGE_KEY,
+    EMPTY_FLAGS,
+    flagMapCodec,
   );
 
-  const toggleCollapsed = useCallback((id: CollapsibleSectionId) => {
-    setCollapsed((prev) => {
-      const next: FlagMap = { ...prev };
-      if (prev[id]) delete next[id];
+  const toggleCollapsed = useCallback(
+    (id: CollapsibleSectionId) => {
+      const next: FlagMap = { ...collapsed };
+      if (collapsed[id]) delete next[id];
       else next[id] = true;
-      writeStored(COLLAPSED_STORAGE_KEY, next);
-      return next;
-    });
-  }, []);
+      setCollapsedStored(next);
+    },
+    [collapsed, setCollapsedStored],
+  );
 
-  const toggleHidden = useCallback((id: CollapsibleSectionId) => {
-    setHidden((prev) => {
-      const next: FlagMap = { ...prev };
-      if (prev[id]) delete next[id];
+  const toggleHidden = useCallback(
+    (id: CollapsibleSectionId) => {
+      const next: FlagMap = { ...hidden };
+      if (hidden[id]) delete next[id];
       else next[id] = true;
-      writeStored(HIDDEN_STORAGE_KEY, next);
-      return next;
-    });
-  }, []);
+      setHiddenStored(next);
+    },
+    [hidden, setHiddenStored],
+  );
 
-  const unhide = useCallback((id: CollapsibleSectionId) => {
-    setHidden((prev) => {
-      if (!prev[id]) return prev;
-      const next: FlagMap = { ...prev };
+  const unhide = useCallback(
+    (id: CollapsibleSectionId) => {
+      if (!hidden[id]) return;
+      const next: FlagMap = { ...hidden };
       delete next[id];
-      writeStored(HIDDEN_STORAGE_KEY, next);
-      return next;
-    });
-  }, []);
+      setHiddenStored(next);
+    },
+    [hidden, setHiddenStored],
+  );
 
   const unhideAll = useCallback(() => {
-    setHidden((prev) => {
-      if (Object.keys(prev).length === 0) return prev;
-      writeStored(HIDDEN_STORAGE_KEY, {});
-      return {};
-    });
-  }, []);
+    if (Object.keys(hidden).length === 0) return;
+    setHiddenStored(EMPTY_FLAGS);
+  }, [hidden, setHiddenStored]);
 
   const value = useMemo<SectionVisibilityContextValue>(
     () => ({ collapsed, hidden, toggleCollapsed, toggleHidden, unhide, unhideAll }),

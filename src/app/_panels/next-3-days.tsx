@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import { useState } from "react";
 import { formatTimeWithSuffix } from "@/lib/utils";
@@ -6,6 +6,7 @@ import type { DayGroupedEvents } from "@/lib/dashboard-data";
 import { SectionCollapseControls } from "./section-collapse-controls";
 import { SectionHeader } from "./section-header";
 import { useSectionVisibility } from "./section-visibility-context";
+import { flagCodec, usePersistedState } from "./use-persisted-state";
 
 const GCAL_DAY_URL = "https://calendar.google.com/calendar/u/0/r/day";
 
@@ -26,25 +27,18 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
   const swipeHintKey = "next3days-swipe-hint-dismissed";
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
-  const [showSwipeHint, setShowSwipeHint] = useState(() => {
-    if (!canSwipe || typeof window === "undefined") return false;
-    try {
-      return window.localStorage.getItem(swipeHintKey) !== "1";
-    } catch {
-      return false;
-    }
-  });
+  const [swipeHintDismissed, setSwipeHintDismissed] = usePersistedState(
+    swipeHintKey,
+    false,
+    flagCodec,
+  );
+  const showSwipeHint = canSwipe && !swipeHintDismissed;
   const total = groups.reduce((n, g) => n + g.events.length, 0);
   const selectedGroup = groups[selectedIndex] ?? groups[0];
 
   const dismissSwipeHint = () => {
     if (!showSwipeHint) return;
-    setShowSwipeHint(false);
-    try {
-      window.localStorage.setItem(swipeHintKey, "1");
-    } catch {
-      // ignore storage failures
-    }
+    setSwipeHintDismissed(true);
   };
 
   const goToNext = () => {

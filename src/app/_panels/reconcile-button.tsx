@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { reconcileSyncAction, type ReconcileResult } from "@/app/actions";
+import { Toast } from "./toast-stack";
 
 type ReconcileToast = {
   kind: "success" | "warning" | "error";
@@ -79,18 +80,7 @@ export function ReconcileButton({ className }: { className?: string }) {
       >
         {busy ? "Reconciling…" : "Reconcile"}
       </button>
-      {toast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={cn(
-            "pointer-events-none fixed right-4 bottom-4 z-50 max-w-[28rem] rounded-md border px-3 py-2 text-[12px] shadow-lg backdrop-blur",
-            toastStyle,
-          )}
-        >
-          {toast.message}
-        </div>
-      ) : null}
+      {toast ? <Toast className={toastStyle}>{toast.message}</Toast> : null}
     </>
   );
 }

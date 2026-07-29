@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSyncStatus } from "./sync-status-context";
+import { Toast } from "./toast-stack";
 
 type ManualSyncButtonProps = {
   size?: "sm" | "md";
@@ -154,14 +155,7 @@ export function ManualSyncButton({
         ) : null}
       </span>
       {toast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={cn(
-            "pointer-events-none fixed right-4 bottom-4 z-50 max-w-[28rem] rounded-md border px-3 py-2 text-[12px] shadow-lg backdrop-blur",
-            toastStyle,
-          )}
-        >
+        <Toast className={toastStyle}>
           <div>{toast.message}</div>
           {toast.details && toast.details.length > 0 ? (
             <div className="mt-1.5">
@@ -181,7 +175,7 @@ export function ManualSyncButton({
               ) : null}
             </div>
           ) : null}
-        </div>
+        </Toast>
       ) : null}
     </>
   );

@@ -480,6 +480,104 @@ describe("loadDashboard", () => {
     ]);
   });
 
+  it("keeps a task completed today visible after its due date has passed", async () => {
+    rows.notionPages = [
+      notionPage({ id: "project", title: "Project" }),
+      notionPage({
+        id: "notion-done-today",
+        title: "Notion done today",
+        status: "Done",
+        dateStart: new Date("2026-05-05T09:00:00.000Z"),
+        parentId: "project",
+        updatedAt: new Date("2026-05-07T07:30:00.000Z"),
+      }),
+      notionPage({
+        id: "notion-done-last-week",
+        title: "Notion done last week",
+        status: "Done",
+        dateStart: new Date("2026-05-01T09:00:00.000Z"),
+        parentId: "project",
+        updatedAt: new Date("2026-05-01T10:00:00.000Z"),
+      }),
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-done-today",
+        content: "Todoist done today",
+        dueDate: new Date("2026-05-06T09:00:00.000Z"),
+        checked: true,
+        updatedAt: new Date("2026-05-07T07:45:00.000Z"),
+      }),
+      todoistTask({
+        id: "todoist-done-last-week",
+        content: "Todoist done last week",
+        dueDate: new Date("2026-05-01T09:00:00.000Z"),
+        checked: true,
+        updatedAt: new Date("2026-05-01T10:00:00.000Z"),
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    const titles = data.todayTasks.map((t) => t.title);
+    expect(titles).toContain("Notion done today");
+    expect(titles).toContain("Todoist done today");
+    expect(titles).not.toContain("Notion done last week");
+    expect(titles).not.toContain("Todoist done last week");
+
+    for (const title of ["Notion done today", "Todoist done today"]) {
+      expect(data.todayTasks.find((t) => t.title === title)).toEqual(
+        expect.objectContaining({ done: true }),
+      );
+    }
+    expect(data.overdueTasks).toEqual([]);
+    // Completed work must not inflate the hero's open counters.
+    expect(data.meta.todayOpenCount).toBe(0);
+    expect(data.meta.overdueOpenCount).toBe(0);
+  });
+
+  it("does not duplicate a linked task completed today across both sources", async () => {
+    rows.notionPages = [
+      notionPage({ id: "project", title: "Project" }),
+      notionPage({
+        id: "notion-linked-done",
+        title: "Linked done today",
+        status: "Done",
+        dateStart: new Date("2026-05-05T09:00:00.000Z"),
+        parentId: "project",
+        updatedAt: new Date("2026-05-07T07:30:00.000Z"),
+      }),
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-linked-done",
+        content: "Linked done today",
+        dueDate: new Date("2026-05-05T09:00:00.000Z"),
+        checked: true,
+        updatedAt: new Date("2026-05-07T07:30:00.000Z"),
+      }),
+    ];
+    rows.taskLinks = [
+      {
+        id: "link-done",
+        notionPageId: "notion-linked-done",
+        todoistTaskId: "todoist-linked-done",
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+        lastSyncAt: new Date("2026-05-01T00:00:00.000Z"),
+        lastSyncHash: "hash",
+        pendingOrigin: null,
+      },
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    const matches = data.todayTasks.filter((t) => t.title === "Linked done today");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toEqual(
+      expect.objectContaining({ done: true, notionPageId: "notion-linked-done" }),
+    );
+  });
+
   it("flags overdue Recurring-folder tasks so the recurring toggle governs them", async () => {
     rows.todoistProjects = [
       {

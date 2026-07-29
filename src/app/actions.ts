@@ -462,6 +462,12 @@ export async function toggleTaskDoneAction(args: {
     await applyDashboardToggle(args);
     return { ok: true } as const;
   } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "toggle_task_error",
+      payload: args,
+      error: (e as Error).message,
+    });
     return { ok: false, error: (e as Error).message } as const;
   }
 }

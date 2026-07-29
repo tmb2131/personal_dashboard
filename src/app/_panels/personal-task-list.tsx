@@ -28,6 +28,7 @@ function PersonalTaskRow({
     showUndo,
     moveMessage,
     moveError,
+    toggleError,
     canToggle,
     canReschedule,
     toggleDone,
@@ -160,10 +161,12 @@ function PersonalTaskRow({
                 {context}
               </div>
             )}
-            {(moveMessage || moveError) && (
+            {(moveMessage || moveError || toggleError) && (
               <div className="mt-0.5 text-[10px]">
-                {moveError ? (
-                  <span className="text-danger">{moveError}</span>
+                {moveError || toggleError ? (
+                  <span aria-live="polite" className="text-danger">
+                    {moveError ?? toggleError}
+                  </span>
                 ) : (
                   <span aria-live="polite" className="text-fg-subtle">{moveMessage}</span>
                 )}

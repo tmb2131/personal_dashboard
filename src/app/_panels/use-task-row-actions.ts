@@ -26,6 +26,7 @@ export function useTaskRowActions(t: Subtask) {
   const [showUndo, setShowUndo] = useState(false);
   const [moveMessage, setMoveMessage] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const undoTimerRef = useRef<number | null>(null);
   const moveTimerRef = useRef<number | null>(null);
 
@@ -57,6 +58,7 @@ export function useTaskRowActions(t: Subtask) {
     if (!canToggle) return;
     const next = !done;
     setDone(next);
+    setToggleError(null);
     clearUndoTimer();
     startTransition(async () => {
       const result = await toggleTaskDoneAction({
@@ -66,6 +68,7 @@ export function useTaskRowActions(t: Subtask) {
       });
       if (!result.ok) {
         setDone(!next);
+        setToggleError(result.error);
         return;
       }
       if (next) {
@@ -85,6 +88,7 @@ export function useTaskRowActions(t: Subtask) {
     clearUndoTimer();
     setShowUndo(false);
     setDone(false);
+    setToggleError(null);
     startTransition(async () => {
       const result = await toggleTaskDoneAction({
         notionPageId: t.notionPageId,
@@ -93,6 +97,7 @@ export function useTaskRowActions(t: Subtask) {
       });
       if (!result.ok) {
         setDone(true);
+        setToggleError(result.error);
         return;
       }
       router.refresh();
@@ -105,6 +110,7 @@ export function useTaskRowActions(t: Subtask) {
     target.setDate(target.getDate() + daysFromNow);
     const iso = toIsoDate(target);
     setMoveError(null);
+    setToggleError(null);
     setMoveMessage(`Moved to ${label}`);
     clearMoveTimer();
     moveTimerRef.current = window.setTimeout(() => {
@@ -136,6 +142,7 @@ export function useTaskRowActions(t: Subtask) {
     showUndo,
     moveMessage,
     moveError,
+    toggleError,
     canToggle,
     canReschedule,
     toggleDone,

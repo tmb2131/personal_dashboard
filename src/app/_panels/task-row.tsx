@@ -26,13 +26,12 @@ export function TaskRow({
     pending,
     expanded,
     setExpanded,
-    showUndo,
     moveMessage,
     moveError,
+    toggleError,
     canToggle,
     canReschedule,
     toggleDone,
-    undoDone,
     reschedule,
   } = useTaskRowActions(t);
 
@@ -191,19 +190,6 @@ export function TaskRow({
               ))}
             </div>
           )}
-          {showUndo && (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-bg-elevated px-2 py-px text-[10px] text-fg-muted">
-              Done
-              <button
-                type="button"
-                onClick={undoDone}
-                disabled={pending}
-                className="underline decoration-dotted underline-offset-2 hover:text-fg disabled:opacity-50"
-              >
-                undo
-              </button>
-            </span>
-          )}
         </div>
         {canReschedule && (
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-fg-subtle md:hidden">
@@ -240,10 +226,12 @@ export function TaskRow({
             )}
           </div>
         )}
-        {(moveMessage || moveError) && (
+        {(moveMessage || moveError || toggleError) && (
           <div className="mt-0.5 text-[10px]">
-            {moveError ? (
-              <span className="text-danger">{moveError}</span>
+            {moveError || toggleError ? (
+              <span aria-live="polite" className="text-danger">
+                {moveError ?? toggleError}
+              </span>
             ) : (
               <span aria-live="polite" className="text-fg-subtle">{moveMessage}</span>
             )}

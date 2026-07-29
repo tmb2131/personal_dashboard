@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Subtask } from "@/lib/dashboard-data";
+import { cn } from "@/lib/utils";
 import { useDashboardMeta } from "./dashboard-meta-context";
 import { dispatchShortcut, EmptyState } from "./empty-state";
 import { SectionHeader } from "./section-header";
@@ -32,33 +33,38 @@ export function TaskList({
   } = useTodayRecurringTasksVisibility();
   const meta = useDashboardMeta();
 
-  const { visibleTasks, visibleOverdue } = useMemo(() => {
-    const byView = (list: Subtask[]) => {
-      const filtered =
-        splitMode === "non-recurring"
-          ? list.filter((t) => !t.hasRecurringTag)
-          : splitMode === "recurring"
-          ? list.filter((t) => t.hasRecurringTag)
-          : showRecurringTodayTasks
-          ? list
-          : list.filter((t) => !t.hasRecurringTag);
-      return filtered.filter((t) => !t.done);
+  const { visibleTasks, visibleOverdue, visibleDone } = useMemo(() => {
+    const byView = (list: Subtask[]) =>
+      splitMode === "non-recurring"
+        ? list.filter((t) => !t.hasRecurringTag)
+        : splitMode === "recurring"
+        ? list.filter((t) => t.hasRecurringTag)
+        : showRecurringTodayTasks
+        ? list
+        : list.filter((t) => !t.hasRecurringTag);
+    const inView = byView(tasks);
+    return {
+      visibleTasks: inView.filter((t) => !t.done),
+      visibleOverdue: byView(overdueTasks).filter((t) => !t.done),
+      visibleDone: inView.filter((t) => t.done),
     };
-    return { visibleTasks: byView(tasks), visibleOverdue: byView(overdueTasks) };
   }, [tasks, overdueTasks, showRecurringTodayTasks, splitMode]);
+
+  const [showDone, setShowDone] = useState(false);
 
   const total = visibleTasks.length + visibleOverdue.length;
   const ratio = total.toString();
   const isEmpty = total === 0;
+  // Open tasks regardless of the recurring view filter — distinguishes "nothing
+  // left to do" from "everything left is hidden by the current view".
+  const openAnywhere =
+    tasks.filter((t) => !t.done).length + overdueTasks.filter((t) => !t.done).length;
 
   const isRecurringMode = splitMode === "recurring";
   const sectionId = isRecurringMode ? "today-recurring-tasks" : "today-tasks";
   const sectionTitle = isRecurringMode ? "Recurring" : "Tasks";
   const allClear =
-    !isRecurringMode &&
-    tasks.length === 0 &&
-    overdueTasks.length === 0 &&
-    (meta?.todayMeetingCount ?? 0) === 0;
+    !isRecurringMode && openAnywhere === 0 && (meta?.todayMeetingCount ?? 0) === 0;
 
   const isTodayNonRecurring = splitMode === "non-recurring";
   const toggleValue = isTodayNonRecurring ? showTodayRecurringSection : showRecurringTodayTasks;
@@ -125,7 +131,9 @@ export function TaskList({
       {isEmpty ? (
         isRecurringMode ? (
           <EmptyState message="No recurring tasks for today." />
-        ) : tasks.length === 0 && overdueTasks.length === 0 ? (
+        ) : openAnywhere === 0 && visibleDone.length > 0 ? (
+          <EmptyState message="All done for today." tone="positive" />
+        ) : openAnywhere === 0 ? (
           allClear ? (
             <EmptyState
               message="All clear for today."
@@ -186,10 +194,49 @@ export function TaskList({
         </>
       )}
 
+      {visibleDone.length > 0 && (
+        <div className="px-5 pt-1">
+          <button
+            type="button"
+            onClick={() => setShowDone((v) => !v)}
+            aria-expanded={showDone}
+            className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-fg-subtle transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted"
+          >
+            <svg
+              aria-hidden
+              width="8"
+              height="8"
+              viewBox="0 0 8 8"
+              fill="none"
+              className={cn(
+                "transition-transform duration-200 ease-out motion-reduce:duration-0",
+                showDone && "rotate-90",
+              )}
+            >
+              <path
+                d="M2.5 1L6 4L2.5 7"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Done today · {visibleDone.length}
+          </button>
+        </div>
+      )}
+      {showDone && visibleDone.length > 0 && (
+        <ul>
+          {visibleDone.map((t) => (
+            <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
+          ))}
+        </ul>
+      )}
+
       {!isRecurringMode && (
         <AddTaskRow
           notionProjectPicklist={notionProjectPicklist}
-          autoOpen={tasks.length === 0}
+          autoOpen={tasks.length === 0 && overdueTasks.length === 0}
         />
       )}
     </section>

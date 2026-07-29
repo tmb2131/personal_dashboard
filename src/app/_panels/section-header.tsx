@@ -103,7 +103,7 @@ function SourceFreshness({
           {retrying ? "retrying…" : "retry"}
         </button>
       ) : freshness === "stale" ? (
-        <span className="ml-0.5 text-amber-400/90 tabular-nums">{ago}</span>
+        <span className="ml-0.5 text-warning tabular-nums">{ago}</span>
       ) : freshness === "unknown" ? null : (
         <span className="ml-0.5 tabular-nums">{ago}</span>
       )}

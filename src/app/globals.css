@@ -1,11 +1,16 @@
 @import "tailwindcss";
 
+/*
+ * Foreground ramp is tuned so every step clears WCAG AA (4.5:1) against its own
+ * background — much of the UI renders these at 10-12px, where the old lighter
+ * greys sat near 2.3:1. Light mode: fg 13.3:1, fg-muted 6.5:1, fg-subtle 4.9:1.
+ */
 :root {
   --bg: #f5f1e8;
   --bg-elevated: #faf7ef;
   --fg: #2a2620;
-  --fg-muted: #7a7468;
-  --fg-subtle: #a8a193;
+  --fg-muted: #5c5648;
+  --fg-subtle: #6f6857;
   --border: #e6dfcf;
   --border-strong: #d4ccb8;
   --accent: #5b6cff;
@@ -13,9 +18,9 @@
   --done: #16a34a;
   --danger: #b42318;
   --success: #047857;
-  --warning: #b45309;
+  --warning: #b25107;
   --pill-bg: #ece4cf;
-  --pill-fg: #6f6750;
+  --pill-fg: #5f5842;
 
   --dot-work: #3b82f6;
   --dot-money: #10b981;
@@ -38,7 +43,7 @@
     --bg-elevated: #252220;
     --fg: #ece7dc;
     --fg-muted: #a09a8e;
-    --fg-subtle: #6b6559;
+    --fg-subtle: #90897d;
     --border: #332f28;
     --border-strong: #4a463d;
     --accent: #8a99ff;
@@ -57,7 +62,7 @@
   --bg-elevated: #252220;
   --fg: #ece7dc;
   --fg-muted: #a09a8e;
-  --fg-subtle: #6b6559;
+  --fg-subtle: #90897d;
   --border: #332f28;
   --border-strong: #4a463d;
   --accent: #8a99ff;
@@ -74,8 +79,8 @@
   --bg: #f5f1e8;
   --bg-elevated: #faf7ef;
   --fg: #2a2620;
-  --fg-muted: #7a7468;
-  --fg-subtle: #a8a193;
+  --fg-muted: #5c5648;
+  --fg-subtle: #6f6857;
   --border: #e6dfcf;
   --border-strong: #d4ccb8;
   --accent: #5b6cff;
@@ -83,9 +88,9 @@
   --done: #16a34a;
   --danger: #b42318;
   --success: #047857;
-  --warning: #b45309;
+  --warning: #b25107;
   --pill-bg: #ece4cf;
-  --pill-fg: #6f6750;
+  --pill-fg: #5f5842;
 }
 
 @theme inline {

@@ -76,6 +76,12 @@ export function ShortcutHelpOverlay() {
             <ShortcutRow k="w" label="Push out 1 week" />
             <ShortcutRow k="e" label="Show / hide details" />
           </ShortcutGroup>
+          <ShortcutGroup title="Quick add (⇧N)">
+            <ShortcutRow k="tomorrow 9am" label="Dates are read from the text" />
+            <ShortcutRow k="p1 … p4" label="Set priority (p1 highest)" />
+            <ShortcutRow k="@project" label="File under a project" />
+            <ShortcutRow k="↑ ↓ ⏎" label="Pick from project suggestions" />
+          </ShortcutGroup>
         </div>
       </div>
     </div>

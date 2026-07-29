@@ -42,8 +42,10 @@ export function FooterStrip({
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!e.shiftKey) return;
       if (isEditableTarget(e.target)) return;
-      if (e.key === "D") {
+      // Accept both cases so Caps Lock doesn't break it, matching ⇧T.
+      if (e.key === "D" || e.key === "d") {
         e.preventDefault();
         toggleTheme();
       }

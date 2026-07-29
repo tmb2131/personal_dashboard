@@ -55,6 +55,13 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
           <SignOutButton />
           <ManualSyncButton variant="icon" />
           <span className="tabular-nums text-fg-muted">{timeStr}</span>
+          {/* Sync failures were previously invisible on phones. */}
+          <SourceHealthGroup
+            sources={meta.sources}
+            errorBySource={errorBySource}
+            inFlight={inFlight}
+            now={now}
+          />
         </div>
       </div>
 

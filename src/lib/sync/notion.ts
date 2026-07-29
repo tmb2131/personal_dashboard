@@ -584,6 +584,7 @@ export async function createNotionProjectSubtask(input: {
   title: string;
   dueDate: string | null;
   description?: string | null;
+  priority?: NotionPage["priority"] | null;
 }): Promise<{ pageId: string }> {
   if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
   if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
@@ -605,6 +606,9 @@ export async function createNotionProjectSubtask(input: {
   }
   if (input.description?.trim()) {
     properties.Notes = formatRichTextProp(input.description);
+  }
+  if (input.priority) {
+    properties.Priority = { select: { name: input.priority } };
   }
 
   const created = await client().pages.create({

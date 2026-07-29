@@ -10,9 +10,10 @@ import {
   parseDateTimeLocal,
 } from "@/lib/date-utils";
 import { db, schema } from "@/lib/db";
-import { extractProject } from "@/lib/quick-add";
+import { extractPriority, extractProject, toTodoistApiPriority } from "@/lib/quick-add";
 import { isTravelEventsCategory } from "@/lib/utils";
 import { logAudit } from "@/lib/sync/audit";
+import { PRIORITY_TODOIST_TO_NOTION } from "@/lib/sync/mappings";
 import {
   applyDashboardToggle,
   insertTaskLinkForPair,
@@ -34,7 +35,9 @@ import {
 import { reconcileAllLinks, type ReconcileSummary } from "@/lib/sync/reconcile";
 import { getPersonalProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
 
-export type QuickAddResult = { ok: true; summary?: string } | { ok: false; error: string };
+export type QuickAddResult =
+  | { ok: true; summary?: string; warning?: string }
+  | { ok: false; error: string };
 const DEFAULT_QUICK_ADD_PROJECT = "Personal";
 
 function quickAddIdempotencyKey(args: {
@@ -57,7 +60,8 @@ export async function quickAddAction(
   if (!session) return { ok: false, error: "Not signed in" };
   if (!process.env.TODOIST_TOKEN) return { ok: false, error: "TODOIST_TOKEN missing" };
 
-  const { text, projectName } = extractProject(raw);
+  const { text: textAfterProject, projectName } = extractProject(raw);
+  const { text, priority } = extractPriority(textAfterProject);
   if (!text) return { ok: false, error: "Empty task" };
 
   // chrono-node parses dates from natural language. We strip the matched date span
@@ -103,10 +107,22 @@ export async function quickAddAction(
   const match = list.find((p) => p.name.toLowerCase() === targetProjectName.toLowerCase());
   const projectId = selectedNotionProjectId ? (match?.id ?? (await getPersonalProjectId())) : match?.id;
 
+  // A typed @mention that matches no Todoist project silently lands the task in
+  // Inbox. Still create it — losing the capture is worse — but say where it went.
+  const unresolvedProject =
+    projectName != null && !selectedNotionProjectId && !match ? projectName : null;
+  const destinationLabel =
+    selectedNotionProjectTitle ?? match?.name ?? (projectId ? targetProjectName : "Inbox");
+
   try {
     const projectLabel = selectedNotionProjectTitle ?? projectName ?? null;
     const labels = projectLabel ? [projectLabel.slice(0, 60)] : undefined;
-    const baseArgs = { content, ...(projectId ? { projectId } : {}), ...(labels ? { labels } : {}) };
+    const baseArgs = {
+      content,
+      ...(projectId ? { projectId } : {}),
+      ...(labels ? { labels } : {}),
+      ...(priority ? { priority: toTodoistApiPriority(priority) } : {}),
+    };
     const args = dueDate
       ? dueHasTime
         ? { ...baseArgs, dueDatetime: dueDate.toISOString() }
@@ -120,6 +136,7 @@ export async function quickAddAction(
           notionParentPageId: selectedNotionProjectId,
           title: content,
           dueDate: dueDateOnly,
+          priority: priority ? PRIORITY_TODOIST_TO_NOTION[toTodoistApiPriority(priority)] : null,
         });
         await syncTodoistTasksByIds([created.id]);
         await insertTaskLinkForPair(pageId, created.id);
@@ -142,9 +159,16 @@ export async function quickAddAction(
       payload: { idempotencyKey, todoistTaskId: created.id },
     });
 
+    const summaryParts = [`Added to ${destinationLabel}`];
+    if (dueDate) summaryParts.push(dueDate.toLocaleDateString());
+    if (priority) summaryParts.push(`p${priority}`);
+
     return {
       ok: true,
-      summary: created.content + (dueDate ? ` · ${dueDate.toLocaleDateString()}` : ""),
+      summary: summaryParts.join(" · "),
+      ...(unresolvedProject
+        ? { warning: `No Todoist project "${unresolvedProject}" — added to Inbox` }
+        : {}),
     };
   } catch (e) {
     await logAudit({

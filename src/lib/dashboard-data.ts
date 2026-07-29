@@ -4,6 +4,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
 import { parseDateOnlyLocal } from "@/lib/date-utils";
 import { extractMeetingUrl } from "@/lib/meeting-url";
+import { getNotionDataVersion } from "@/lib/sync/data-version";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
 export type NotionPage = InferSelectModel<typeof schema.notionPages>;
@@ -136,6 +137,8 @@ export type DashboardData = {
   lifeAreas: Project[];
   meta: DashboardMeta;
   lastSyncAt: Date | null;
+  /** Newest Notion `updated_at` in epoch ms; open tabs poll for a higher value. */
+  notionDataVersion: number | null;
   isEmpty: boolean;
 };
 
@@ -296,7 +299,16 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const next7DaysEnd = endOfDay(addDays(now, 7));
   const horizon = endOfDay(addDays(now, 2));
 
-  const [events, pages, categories, tasks, links, todoistProjects, syncRows] = await Promise.all([
+  const [
+    events,
+    pages,
+    categories,
+    tasks,
+    links,
+    todoistProjects,
+    syncRows,
+    notionDataVersion,
+  ] = await Promise.all([
     db
       .select()
       .from(schema.gcalEvents)
@@ -308,6 +320,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     db.select().from(schema.taskLinks),
     db.select().from(schema.todoistProjects),
     db.select().from(schema.syncState),
+    getNotionDataVersion(),
   ]);
   const lastSyncAt = syncRows
     .map((s) => s.lastIncrementalAt ?? s.lastFullSyncAt)
@@ -836,6 +849,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     lifeAreas,
     meta,
     lastSyncAt,
+    notionDataVersion,
     isEmpty,
   };
 }

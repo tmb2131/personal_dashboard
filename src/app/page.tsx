@@ -45,7 +45,7 @@ npm run dev`}
     return (
       <SyncStatusProvider>
         <TodayRecurringTasksProvider>
-          <AutoTodoistSync />
+          <AutoTodoistSync notionDataVersion={data.notionDataVersion} />
           <main className="flex min-h-dvh flex-col overflow-x-clip">
             <HeroHeader meta={data.meta} initialNow={data.now} />
             <div className="flex flex-1 items-center justify-center p-8">

@@ -18,7 +18,22 @@ type GcalAutoSyncResponse = {
   error?: string;
 };
 
-export function AutoTodoistSync() {
+type NotionVersionResponse = {
+  ok?: boolean;
+  version?: number | null;
+  error?: string;
+};
+
+export function AutoTodoistSync({
+  notionDataVersion = null,
+}: {
+  /**
+   * Notion data version baked into the payload this tab is rendering. Notion is
+   * never synced from the browser — it arrives by webhook — so the only way an
+   * open tab notices those writes is a newer version coming back from the probe.
+   */
+  notionDataVersion?: number | null;
+} = {}) {
   const router = useRouter();
   const { beginSync, endSync } = useSyncStatus();
   const inFlight = useRef(false);
@@ -28,7 +43,7 @@ export function AutoTodoistSync() {
     inFlight.current = true;
     beginSync();
     try {
-      const [todoistRes, gcalRes] = await Promise.all([
+      const [todoistRes, gcalRes, notionRes] = await Promise.all([
         fetch("/api/sync/todoist", {
           method: "POST",
           cache: "no-store",
@@ -37,6 +52,7 @@ export function AutoTodoistSync() {
           method: "POST",
           cache: "no-store",
         }),
+        fetch("/api/sync/notion-version", { cache: "no-store" }),
       ]);
       if (todoistRes.status === 401 || gcalRes.status === 401) {
         endSync();
@@ -44,15 +60,26 @@ export function AutoTodoistSync() {
       }
       const todoistBody = (await todoistRes.json().catch(() => ({}))) as TodoistAutoSyncResponse;
       const gcalBody = (await gcalRes.json().catch(() => ({}))) as GcalAutoSyncResponse;
+      const notionBody = (await notionRes.json().catch(() => ({}))) as NotionVersionResponse;
       const todoistOk = todoistRes.ok && todoistBody.ok !== false;
       const gcalOk = gcalRes.ok && gcalBody.ok !== false;
+      const notionOk = notionRes.ok && notionBody.ok !== false;
       endSync({
         todoist: todoistOk ? "" : todoistBody.error ?? `HTTP ${todoistRes.status}`,
         gcal: gcalOk ? "" : gcalBody.error ?? `HTTP ${gcalRes.status}`,
+        notion: notionOk ? "" : notionBody.error ?? `HTTP ${notionRes.status}`,
       });
+      // Strict `>` keeps this loop-free: the refreshed payload carries the newer
+      // version, so the next probe compares equal.
+      const notionChanged =
+        notionOk &&
+        typeof notionBody.version === "number" &&
+        notionDataVersion != null &&
+        notionBody.version > notionDataVersion;
       if (
         (todoistOk && todoistBody.changed) ||
-        (gcalOk && gcalBody.changed)
+        (gcalOk && gcalBody.changed) ||
+        notionChanged
       ) {
         router.refresh();
       }
@@ -61,7 +88,7 @@ export function AutoTodoistSync() {
     } finally {
       inFlight.current = false;
     }
-  }, [router, beginSync, endSync]);
+  }, [router, beginSync, endSync, notionDataVersion]);
 
   useEffect(() => {
     void run();

@@ -5,6 +5,7 @@ import type { DashboardData } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 import { AutoTodoistSync } from "./auto-todoist-sync";
 import { DashboardMetaProvider } from "./dashboard-meta-context";
+import { DayRolloverRefresh } from "./day-rollover-refresh";
 import {
   DashboardViewProvider,
   useDashboardView,
@@ -161,7 +162,8 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       <DashboardMetaProvider meta={data.meta}>
         <TodayRecurringTasksProvider>
           <SectionVisibilityProvider>
-            <AutoTodoistSync />
+            <AutoTodoistSync notionDataVersion={data.notionDataVersion} />
+            <DayRolloverRefresh now={data.now} />
             <DashboardViewProvider>
               <DashboardBody data={data} />
             </DashboardViewProvider>

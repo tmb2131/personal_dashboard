@@ -84,6 +84,10 @@ vi.mock("@/lib/meeting-url", () => ({
   extractMeetingUrl: () => null,
 }));
 
+vi.mock("@/lib/sync/data-version", () => ({
+  getNotionDataVersion: () => Promise.resolve(1_700_000_000_000),
+}));
+
 import { loadDashboard } from "./dashboard-data";
 
 function notionPage(overrides: Record<string, unknown>) {
@@ -141,6 +145,12 @@ describe("loadDashboard", () => {
     rows.taskLinks = [];
     rows.todoistProjects = [];
     rows.syncState = [];
+  });
+
+  it("carries the Notion data version so open tabs can detect webhook writes", async () => {
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(data.notionDataVersion).toBe(1_700_000_000_000);
   });
 
   it("shows an open linked Todoist task due today when the Notion mirror is stale", async () => {

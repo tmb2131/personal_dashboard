@@ -42,3 +42,23 @@ export function formatDateOnlyLocal(date: Date): string {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Milliseconds from `now` until just past the next local midnight.
+ *
+ * The 5s buffer absorbs server/client clock skew so the refresh that follows
+ * lands on the new day. Building the target through the local Date constructor
+ * keeps this correct across DST shifts, where a day is 23 or 25 hours long.
+ */
+export function msUntilNextLocalMidnight(now: Date): number {
+  const nextMidnight = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + 1,
+    0,
+    0,
+    5,
+    0,
+  );
+  return Math.max(1_000, nextMidnight.getTime() - now.getTime());
+}

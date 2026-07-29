@@ -117,7 +117,7 @@ function AddTripRow({ autoOpen = false }: { autoOpen?: boolean }) {
         }}
         placeholder="Trip name"
         disabled={pending}
-        className="h-8 w-full rounded border border-border bg-bg px-2 text-[13px] text-fg outline-none placeholder:text-fg-subtle"
+        className="h-8 w-full rounded border border-border bg-bg px-2 text-[13px] text-fg placeholder:text-fg-subtle"
       />
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 text-[11px] text-fg-muted">

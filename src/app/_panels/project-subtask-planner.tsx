@@ -130,7 +130,7 @@ export function ProjectSubtaskPlanner({
                       value={editingTitle}
                       onChange={(e) => setEditingTitle(e.target.value)}
                       disabled={taskPending}
-                      className="h-7 w-full rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none"
+                      className="h-7 w-full rounded border border-border bg-bg px-2 text-[12px] text-fg"
                     />
                     <textarea
                       value={editingDescription}
@@ -138,7 +138,7 @@ export function ProjectSubtaskPlanner({
                       placeholder="Description"
                       disabled={taskPending}
                       rows={2}
-                      className="w-full resize-none rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
+                      className="w-full resize-none rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg placeholder:text-fg-subtle"
                     />
                     <div className="flex items-center gap-1.5">
                       <input
@@ -240,14 +240,14 @@ export function ProjectSubtaskPlanner({
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder="Add sub-task title"
           disabled={taskPending}
-          className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
+          className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg placeholder:text-fg-subtle"
         />
         <input
           value={newDescription}
           onChange={(e) => setNewDescription(e.target.value)}
           placeholder="Description"
           disabled={taskPending}
-          className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg outline-none placeholder:text-fg-subtle"
+          className="h-7 min-w-[12rem] flex-1 rounded border border-border bg-bg px-2 text-[12px] text-fg placeholder:text-fg-subtle"
         />
         <input
           type="date"

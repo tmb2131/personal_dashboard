@@ -179,7 +179,7 @@ export function TaskDetailExpansion({
             disabled={pending}
             placeholder="Task title"
             aria-label="Task title"
-            className="w-full rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg outline-none focus:border-fg-muted"
+            className="w-full rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg focus:border-fg-muted"
           />
         </div>
       )}
@@ -254,7 +254,7 @@ export function TaskDetailExpansion({
           rows={3}
           disabled={pending}
           placeholder="Add task details..."
-          className="w-full resize-y rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg outline-none focus:border-fg-muted"
+          className="w-full resize-y rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg focus:border-fg-muted"
         />
       ) : (
         <div className="text-[12px] text-fg-subtle">{t.description?.trim() || "No description."}</div>

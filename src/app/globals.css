@@ -114,6 +114,23 @@
   --font-serif: var(--font-source-serif);
 }
 
+/*
+ * Baseline keyboard-focus indicator for every control.
+ *
+ * The app ships a documented keyboard model (⇧N, ⇧T, then ↑↓/d/e/t/m/w), so
+ * focus has to be visible everywhere rather than on the handful of components
+ * that happened to style it. This lives in `base` on purpose: components with
+ * their own `focus-visible:ring-*` treatment sit in the `utilities` layer and
+ * still override it, so nothing gets a doubled indicator.
+ */
+@layer base {
+  :where(button, a, select, summary, [role="switch"], [role="option"], [tabindex]):focus-visible,
+  :where(input, textarea):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
 html {
   max-width: 100%;
   overflow-x: hidden;

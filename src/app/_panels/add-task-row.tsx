@@ -209,7 +209,7 @@ export function AddTaskRow({
         placeholder="New task… (⇧N, or @ to link a Notion project)"
         disabled={pending}
         spellCheck={false}
-        className="h-7 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-fg-subtle"
+        className="h-7 min-w-0 flex-1 bg-transparent text-[13px] placeholder:text-fg-subtle"
       />
       {error && <span className="shrink-0 text-[11px] text-danger">{error}</span>}
       {!error && notice && (

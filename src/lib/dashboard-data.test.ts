@@ -325,4 +325,182 @@ describe("loadDashboard", () => {
     expect(data.meta.todayOpenCount).toBe(0);
     expect(data.meta.todayOpenRecurringCount).toBe(1);
   });
+
+  it("surfaces open tasks whose dates are entirely in the past as overdue", async () => {
+    rows.notionPages = [
+      notionPage({ id: "project", title: "Project" }),
+      notionPage({
+        id: "notion-overdue",
+        title: "Notion overdue",
+        dateStart: new Date("2026-05-05T09:00:00.000Z"),
+        parentId: "project",
+      }),
+      notionPage({
+        id: "notion-done-past",
+        title: "Notion done in the past",
+        status: "Done",
+        dateStart: new Date("2026-05-05T09:00:00.000Z"),
+        parentId: "project",
+      }),
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-overdue",
+        content: "Todoist overdue",
+        dueDate: new Date("2026-05-06T09:00:00.000Z"),
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(data.overdueTasks).toEqual([
+      expect.objectContaining({
+        title: "Notion overdue",
+        done: false,
+        overdueDays: 2,
+      }),
+      expect.objectContaining({
+        title: "Todoist overdue",
+        done: false,
+        overdueDays: 1,
+      }),
+    ]);
+    expect(data.todayTasks).toEqual([]);
+    expect(data.next7DaysTasks).toEqual([]);
+    expect(data.meta.overdueOpenCount).toBe(2);
+    expect(data.meta.overdueOpenRecurringCount).toBe(0);
+  });
+
+  it("keeps a task with a passed date but upcoming deadline in Next 7 Days, not overdue", async () => {
+    rows.notionPages = [
+      notionPage({ id: "project", title: "Project" }),
+      notionPage({
+        id: "notion-deadline-ahead",
+        title: "Passed date, deadline ahead",
+        dateStart: new Date("2026-05-05T09:00:00.000Z"),
+        deadline: new Date("2026-05-10T09:00:00.000Z"),
+        parentId: "project",
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(data.overdueTasks).toEqual([]);
+    expect(data.next7DaysTasks).toEqual([
+      expect.objectContaining({ title: "Passed date, deadline ahead", overdueDays: null }),
+    ]);
+  });
+
+  it("does not duplicate a linked Todoist task whose Notion mirror is already overdue", async () => {
+    rows.notionPages = [
+      notionPage({ id: "project", title: "Project" }),
+      notionPage({
+        id: "notion-linked-overdue",
+        title: "Linked overdue",
+        dateStart: new Date("2026-05-04T09:00:00.000Z"),
+        parentId: "project",
+      }),
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-linked-overdue",
+        content: "Linked overdue",
+        dueDate: new Date("2026-05-04T09:00:00.000Z"),
+      }),
+    ];
+    rows.taskLinks = [
+      {
+        id: "link-overdue",
+        notionPageId: "notion-linked-overdue",
+        todoistTaskId: "todoist-linked-overdue",
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+        lastSyncAt: new Date("2026-05-01T00:00:00.000Z"),
+        lastSyncHash: "hash",
+        pendingOrigin: null,
+      },
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(data.overdueTasks).toHaveLength(1);
+    expect(data.overdueTasks[0]).toEqual(
+      expect.objectContaining({
+        title: "Linked overdue",
+        source: "both",
+        notionPageId: "notion-linked-overdue",
+        todoistTaskId: "todoist-linked-overdue",
+        overdueDays: 3,
+      }),
+    );
+  });
+
+  it("moves overdue Personal-project tasks into the overdue list instead of Personal", async () => {
+    rows.todoistProjects = [
+      {
+        id: "personal",
+        name: "Personal",
+        parentId: null,
+        color: null,
+        archived: false,
+        raw: {},
+        updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-personal-overdue",
+        projectId: "personal",
+        content: "Personal overdue",
+        dueDate: new Date("2026-05-06T09:00:00.000Z"),
+      }),
+      todoistTask({
+        id: "todoist-personal-dateless",
+        projectId: "personal",
+        content: "Personal dateless",
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(data.overdueTasks).toEqual([
+      expect.objectContaining({ title: "Personal overdue", overdueDays: 1 }),
+    ]);
+    expect(data.personalTasks).toEqual([
+      expect.objectContaining({ title: "Personal dateless" }),
+    ]);
+  });
+
+  it("flags overdue Recurring-folder tasks so the recurring toggle governs them", async () => {
+    rows.todoistProjects = [
+      {
+        id: "recurring",
+        name: "Recurring",
+        parentId: null,
+        color: null,
+        archived: false,
+        raw: {},
+        updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ];
+    rows.todoistTasks = [
+      todoistTask({
+        id: "todoist-recurring-overdue",
+        projectId: "recurring",
+        content: "Recurring overdue",
+        dueDate: new Date("2026-05-06T09:00:00.000Z"),
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(data.overdueTasks).toEqual([
+      expect.objectContaining({
+        title: "Recurring overdue",
+        hasRecurringTag: true,
+        overdueDays: 1,
+      }),
+    ]);
+    expect(data.meta.overdueOpenCount).toBe(0);
+    expect(data.meta.overdueOpenRecurringCount).toBe(1);
+  });
 });

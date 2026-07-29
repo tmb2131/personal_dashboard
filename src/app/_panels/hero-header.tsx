@@ -26,6 +26,8 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
 
   const todayOpenDisplayed =
     meta.todayOpenCount + (showRecurringTodayTasks ? meta.todayOpenRecurringCount : 0);
+  const overdueDisplayed =
+    meta.overdueOpenCount + (showRecurringTodayTasks ? meta.overdueOpenRecurringCount : 0);
 
   const flash = useUpdateFlash({
     open: todayOpenDisplayed,
@@ -58,6 +60,12 @@ export function HeroHeader({ meta, initialNow }: { meta: DashboardMeta; initialN
 
       <div className="mt-3 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px] tabular-nums text-fg-muted sm:mt-0 sm:ml-2">
         <span>{pluralise(todayOpenDisplayed, "open", "open")}</span>
+        {overdueDisplayed > 0 && (
+          <>
+            <span className="text-fg-subtle">·</span>
+            <span className="text-danger">{overdueDisplayed} overdue</span>
+          </>
+        )}
         <span className="text-fg-subtle">·</span>
         <span>{pluralise(meta.todayMeetingCount, "meeting", "meetings")}</span>
         {meta.nextEvent && (

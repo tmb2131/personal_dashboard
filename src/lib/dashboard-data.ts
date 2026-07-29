@@ -57,6 +57,11 @@ export type Subtask = {
   estimateMinutes: number | null;
   /** Todoist task from the Recurring project folder; hidden from Today by default, reveal via toggle */
   hasRecurringTag: boolean;
+  /**
+   * Whole days the task has slipped past its date/deadline (≥ 1), or null when
+   * it is not overdue. Only set when every date the task has is before today.
+   */
+  overdueDays: number | null;
 };
 
 export type Project = {
@@ -102,6 +107,10 @@ export type DashboardMeta = {
   todayOpenCount: number;
   /** Open Recurring project-folder tasks due today (add to hero count when toggle is on) */
   todayOpenRecurringCount: number;
+  /** Open overdue tasks excluding Recurring project-folder tasks */
+  overdueOpenCount: number;
+  /** Open overdue Recurring project-folder tasks (add to hero count when toggle is on) */
+  overdueOpenRecurringCount: number;
   todayMeetingCount: number;
   nextEvent: { summary: string; start: Date } | null;
   sources: Record<SourceKey, SourceHealth>;
@@ -112,6 +121,8 @@ export type DashboardData = {
   events: CalendarEvent[];
   todayEvents: CalendarEvent[];
   todayTasks: Subtask[];
+  /** Open tasks whose date/deadline is entirely in the past, oldest first */
+  overdueTasks: Subtask[];
   personalTasks: Subtask[];
   next7DaysTasks: Subtask[];
   /** Top-level Notion "Task name" rows for choosing a parent when posting Todoist → Notion. */
@@ -347,6 +358,19 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const linkByTodoist = new Map(links.map((l) => [l.todoistTaskId, l]));
   const pageById = new Map(pages.map((p) => [p.id, p]));
 
+  // A task counts as overdue only when every date it has is before today —
+  // a passed scheduled date with a still-upcoming deadline stays in Next 7 Days.
+  function overdueDaysFor(date: Date | null, deadline: Date | null): number | null {
+    const ref = date ?? deadline;
+    if (!ref) return null;
+    if (date && date.getTime() >= todayStart.getTime()) return null;
+    if (deadline && deadline.getTime() >= todayStart.getTime()) return null;
+    return Math.max(
+      1,
+      Math.round((todayStart.getTime() - startOfDay(ref).getTime()) / 86_400_000),
+    );
+  }
+
   // Project = top-level "Task name" row (no parent task)
   // Subtask = row linked via "Parent task" (sub-item)
   const projectPages = pages.filter((p) => !p.ignore && !p.parentId);
@@ -370,15 +394,17 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       : p.categoryId
         ? categoryById.get(p.categoryId)
         : undefined;
+    const date = p.dateStart ?? (matched ? todoistDueDate(matched) : null);
+    const deadline = p.deadline ?? (matched ? todoistDeadlineDate(matched) : null);
     return {
       key: `n:${p.id}`,
       title: p.title,
       description: p.notes ?? matched?.description ?? null,
       status: p.status,
       done: p.status === "Done" || Boolean(matched?.checked),
-      date: p.dateStart ?? (matched ? todoistDueDate(matched) : null),
+      date,
       dateHasTime: Boolean(p.dateIsDatetime || (matched && todoistDueHasTime(matched))),
-      deadline: p.deadline ?? (matched ? todoistDeadlineDate(matched) : null),
+      deadline,
       priority: p.priority ?? null,
       source: matched ? "both" : "notion",
       notionPageId: p.id,
@@ -389,6 +415,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       categoryTitle: cat?.title ?? null,
       estimateMinutes: null,
       hasRecurringTag: isRecurringProjectTask(matched?.projectId),
+      overdueDays: overdueDaysFor(date, deadline),
     };
   }
 
@@ -441,6 +468,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   // ----- Today's tasks: sub-tasks (any project) due today, plus orphan Todoist
   const todayTasks: Subtask[] = [];
+  const overdueTasks: Subtask[] = [];
   const personalProjectIds = new Set(
     todoistProjects
       .filter((p) => normalizeProjectName(p.name) === "personal" || isTodoistInboxProject(p))
@@ -452,6 +480,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     for (const s of proj.subtasks) {
       if (taskHasDateInRange(s.date, s.deadline, todayStart, todayEnd)) {
         todayTasks.push(s);
+      } else if (!s.done && s.overdueDays != null) {
+        overdueTasks.push(s);
       } else if (
         !s.done &&
         !s.hasRecurringTag &&
@@ -461,8 +491,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       }
     }
   }
-  const openTodoistIdsAlreadyShownToday = new Set(
-    todayTasks
+  const openTodoistIdsAlreadyShown = new Set(
+    [...todayTasks, ...overdueTasks]
       .filter((s) => !s.done && s.todoistTaskId)
       .map((s) => s.todoistTaskId!),
   );
@@ -476,9 +506,12 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     const tDueDate = todoistDueDate(t);
     const tDeadline = todoistDeadlineDate(t);
     const isDueToday = taskHasDateInRange(tDueDate, tDeadline, todayStart, todayEnd);
+    const tOverdueDays = t.checked ? null : overdueDaysFor(tDueDate, tDeadline);
 
     if (!t.checked && t.projectId && personalProjectIds.has(t.projectId)) {
-      if (!isDueToday) {
+      // Overdue personal tasks surface in the Overdue block instead, mirroring
+      // how due-today personal tasks only appear under Today.
+      if (!isDueToday && tOverdueDays == null) {
         personalTasks.push({
           key: `p:${t.id}`,
           title: t.content,
@@ -498,13 +531,39 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           categoryTitle: todoistProject?.name ?? null,
           estimateMinutes: null,
           hasRecurringTag: isRecurringProjectTask(t.projectId),
+          overdueDays: null,
         });
       }
     }
 
     if (!tDueDate && !tDeadline) continue;
 
-    if (link && (t.checked || openTodoistIdsAlreadyShownToday.has(t.id))) continue;
+    if (link && (t.checked || openTodoistIdsAlreadyShown.has(t.id))) continue;
+
+    if (tOverdueDays != null) {
+      overdueTasks.push({
+        key: `t:${t.id}`,
+        title: t.content,
+        description: t.description ?? null,
+        status: "Not started",
+        done: false,
+        date: tDueDate,
+        dateHasTime: todoistDueHasTime(t),
+        deadline: tDeadline,
+        priority: todoistPriorityToNotion(t.priority),
+        source: link ? "both" : "todoist",
+        notionPageId: link?.notionPageId ?? null,
+        todoistTaskId: t.id,
+        inProgress: t.labels.includes("in-progress"),
+        projectId: null,
+        projectTitle: linkedProject?.title ?? null,
+        categoryTitle: todoistProject?.name ?? null,
+        estimateMinutes: null,
+        hasRecurringTag: isRecurringProjectTask(t.projectId),
+        overdueDays: tOverdueDays,
+      });
+      continue;
+    }
 
     if (
       !link &&
@@ -532,6 +591,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         categoryTitle: todoistProject?.name ?? null,
         estimateMinutes: null,
         hasRecurringTag: isRecurringProjectTask(t.projectId),
+        overdueDays: null,
       });
     }
     if (!isDueToday) continue;
@@ -554,9 +614,16 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       categoryTitle: todoistProject?.name ?? null,
       estimateMinutes: null,
       hasRecurringTag: isRecurringProjectTask(t.projectId),
+      overdueDays: null,
     });
 
   }
+  overdueTasks.sort((a, b) => {
+    const ta = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const tb = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    if (ta !== tb) return ta - tb;
+    return a.title.localeCompare(b.title);
+  });
   todayTasks.sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     const ta = taskRangeSortMs(a.date, a.deadline, todayStart, todayEnd);
@@ -737,9 +804,12 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const nextEvt = todayEvents.find((e) => e.start && new Date(e.start).getTime() > now.getTime());
   const openDueToday = todayTasks.filter((t) => !t.done);
   const todayOpenRecurringCount = openDueToday.filter((t) => t.hasRecurringTag).length;
+  const overdueOpenRecurringCount = overdueTasks.filter((t) => t.hasRecurringTag).length;
   const meta: DashboardMeta = {
     todayOpenCount: openDueToday.length - todayOpenRecurringCount,
     todayOpenRecurringCount,
+    overdueOpenCount: overdueTasks.length - overdueOpenRecurringCount,
+    overdueOpenRecurringCount,
     todayMeetingCount: todayEvents.length,
     nextEvent: nextEvt && nextEvt.start
       ? { summary: nextEvt.summary ?? "(untitled)", start: new Date(nextEvt.start) }
@@ -754,6 +824,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     events,
     todayEvents,
     todayTasks,
+    overdueTasks,
     personalTasks,
     next7DaysTasks,
     notionProjectPicklist,

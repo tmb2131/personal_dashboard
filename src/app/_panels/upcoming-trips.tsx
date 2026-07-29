@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { useDroppable } from "@dnd-kit/core";
@@ -435,14 +435,6 @@ export function UpcomingTrips({
         </ul>
       )}
     </section>
-  );
-}
-
-function Pill({ children }: { children: ReactNode }) {
-  return (
-    <span className="ml-auto inline-flex items-center rounded bg-pill-bg px-1.5 py-0.5 text-[10px] tracking-[0.14em] text-pill-fg">
-      {children}
-    </span>
   );
 }
 

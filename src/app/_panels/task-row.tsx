@@ -165,6 +165,14 @@ export function TaskRow({
           >
             {t.title}
           </button>
+          {!done && t.overdueDays != null && (
+            <span
+              className="mt-0.5 inline-flex shrink-0 items-center rounded-full border border-danger/40 bg-danger/10 px-1.5 py-px text-[10px] tabular-nums text-danger"
+              title={`Due ${t.overdueDays === 1 ? "1 day" : `${t.overdueDays} days`} ago`}
+            >
+              {t.overdueDays}d overdue
+            </span>
+          )}
           {canReschedule && (
             <div
               className={cn(

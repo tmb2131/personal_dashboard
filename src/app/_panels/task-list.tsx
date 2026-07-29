@@ -13,11 +13,13 @@ type SplitMode = "non-recurring" | "recurring";
 
 export function TaskList({
   tasks,
+  overdueTasks = [],
   notionProjectPicklist,
   source = "todoist",
   splitMode,
 }: {
   tasks: Subtask[];
+  overdueTasks?: Subtask[];
   notionProjectPicklist: { id: string; title: string }[];
   source?: string;
   splitMode?: SplitMode;
@@ -30,19 +32,22 @@ export function TaskList({
   } = useTodayRecurringTasksVisibility();
   const meta = useDashboardMeta();
 
-  const visibleTasks = useMemo(() => {
-    const filtered =
-      splitMode === "non-recurring"
-        ? tasks.filter((t) => !t.hasRecurringTag)
-        : splitMode === "recurring"
-        ? tasks.filter((t) => t.hasRecurringTag)
-        : showRecurringTodayTasks
-        ? tasks
-        : tasks.filter((t) => !t.hasRecurringTag);
-    return filtered.filter((t) => !t.done);
-  }, [tasks, showRecurringTodayTasks, splitMode]);
+  const { visibleTasks, visibleOverdue } = useMemo(() => {
+    const byView = (list: Subtask[]) => {
+      const filtered =
+        splitMode === "non-recurring"
+          ? list.filter((t) => !t.hasRecurringTag)
+          : splitMode === "recurring"
+          ? list.filter((t) => t.hasRecurringTag)
+          : showRecurringTodayTasks
+          ? list
+          : list.filter((t) => !t.hasRecurringTag);
+      return filtered.filter((t) => !t.done);
+    };
+    return { visibleTasks: byView(tasks), visibleOverdue: byView(overdueTasks) };
+  }, [tasks, overdueTasks, showRecurringTodayTasks, splitMode]);
 
-  const total = visibleTasks.length;
+  const total = visibleTasks.length + visibleOverdue.length;
   const ratio = total.toString();
   const isEmpty = total === 0;
 
@@ -52,6 +57,7 @@ export function TaskList({
   const allClear =
     !isRecurringMode &&
     tasks.length === 0 &&
+    overdueTasks.length === 0 &&
     (meta?.todayMeetingCount ?? 0) === 0;
 
   const isTodayNonRecurring = splitMode === "non-recurring";
@@ -119,7 +125,7 @@ export function TaskList({
       {isEmpty ? (
         isRecurringMode ? (
           <EmptyState message="No recurring tasks for today." />
-        ) : tasks.length === 0 ? (
+        ) : tasks.length === 0 && overdueTasks.length === 0 ? (
           allClear ? (
             <EmptyState
               message="All clear for today."
@@ -152,11 +158,32 @@ export function TaskList({
           />
         )
       ) : (
-        <ul>
-          {visibleTasks.map((t) => (
-            <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
-          ))}
-        </ul>
+        <>
+          {visibleOverdue.length > 0 && (
+            <>
+              <div className="px-5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-danger">
+                Overdue
+              </div>
+              <ul>
+                {visibleOverdue.map((t) => (
+                  <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
+                ))}
+              </ul>
+              {visibleTasks.length > 0 && (
+                <div className="px-5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-fg-subtle">
+                  Today
+                </div>
+              )}
+            </>
+          )}
+          {visibleTasks.length > 0 && (
+            <ul>
+              {visibleTasks.map((t) => (
+                <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       {!isRecurringMode && (

@@ -88,6 +88,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
         <View show={["dashboard", "today", "upcoming"]} className="min-w-0">
           <TaskList
             tasks={data.todayTasks}
+            overdueTasks={data.overdueTasks}
             notionProjectPicklist={data.notionProjectPicklist}
             splitMode={tasksSplitMode}
           />
@@ -106,6 +107,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
         >
           <TaskList
             tasks={data.todayTasks}
+            overdueTasks={data.overdueTasks}
             notionProjectPicklist={data.notionProjectPicklist}
             splitMode="recurring"
           />

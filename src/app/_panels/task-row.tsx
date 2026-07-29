@@ -10,15 +10,29 @@ import {
   pushTodoistTaskToNotionAction,
 } from "../actions";
 import { DragHandle } from "./drag-handle";
-import { TaskDetailExpansion } from "./task-detail-expansion";
+import { formatTaskDue, TaskDetailExpansion } from "./task-detail-expansion";
 import { RESCHEDULE_PRESETS, useTaskRowActions } from "./use-task-row-actions";
 
 export function TaskRow({
   t,
-  notionProjectPicklist,
+  notionProjectPicklist = [],
+  contextLabel,
+  showDueOnRight = false,
+  showUndoChip = false,
+  showCrossPost = true,
 }: {
   t: Subtask;
-  notionProjectPicklist: { id: string; title: string }[];
+  notionProjectPicklist?: { id: string; title: string }[];
+  /** Replaces the default estimate/project line, e.g. "Todoist: Personal". */
+  contextLabel?: string | null;
+  /** Trailing due-date button, used by the Personal / Next 7 Days list. */
+  showDueOnRight?: boolean;
+  /**
+   * Transient undo affordance. Needed only where a completed task leaves the
+   * payload outright; the Today list keeps completed rows in its Done group.
+   */
+  showUndoChip?: boolean;
+  showCrossPost?: boolean;
 }) {
   const router = useRouter();
   const {
@@ -26,12 +40,14 @@ export function TaskRow({
     pending,
     expanded,
     setExpanded,
+    showUndo,
     moveMessage,
     moveError,
     toggleError,
     canToggle,
     canReschedule,
     toggleDone,
+    undoDone,
     reschedule,
   } = useTaskRowActions(t);
 
@@ -59,8 +75,10 @@ export function TaskRow({
 
   const dotColor = categoryDot(t.categoryTitle);
 
-  const showTodoist = t.source === "notion" && Boolean(t.notionPageId) && !t.todoistTaskId;
+  const showTodoist =
+    showCrossPost && t.source === "notion" && Boolean(t.notionPageId) && !t.todoistTaskId;
   const showNotion =
+    showCrossPost &&
     t.source === "todoist" &&
     Boolean(t.todoistTaskId) &&
     !t.notionPageId &&
@@ -125,7 +143,9 @@ export function TaskRow({
         disabled={!canToggle || rowBusy}
         aria-label={done ? "Mark not done" : "Mark done"}
         className={cn(
-          "mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition",
+          "relative mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition",
+          // Keep the dense visual size but expand the tap area to ~42px.
+          "before:absolute before:-inset-3 before:content-['']",
           done
             ? "border-fg bg-fg text-bg"
             : "border-border-strong hover:border-fg-muted",
@@ -190,6 +210,29 @@ export function TaskRow({
               ))}
             </div>
           )}
+          {showUndoChip && showUndo && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-bg-elevated px-2 py-px text-[10px] text-fg-muted">
+              Done
+              <button
+                type="button"
+                onClick={undoDone}
+                disabled={pending}
+                className="relative underline decoration-dotted underline-offset-2 before:absolute before:-inset-2 before:content-[''] hover:text-fg disabled:opacity-50"
+              >
+                undo
+              </button>
+            </span>
+          )}
+          {showDueOnRight && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="relative shrink-0 text-[11px] tabular-nums text-fg-subtle before:absolute before:-inset-2 before:content-[''] hover:text-fg"
+              title={expanded ? "Hide details" : "Show details"}
+            >
+              {formatTaskDue(t)}
+            </button>
+          )}
         </div>
         {canReschedule && (
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-fg-subtle md:hidden">
@@ -204,28 +247,36 @@ export function TaskRow({
             ))}
           </div>
         )}
-        {(t.estimateMinutes || t.projectTitle) && (
-          <div
-            className={cn(
-              "mt-0.5 flex items-center gap-2 text-[11px] text-fg-subtle",
-              done && "line-through",
+        {contextLabel !== undefined
+          ? contextLabel && (
+              <div
+                className={cn("mt-0.5 text-[11px] text-fg-subtle", done && "line-through")}
+              >
+                {contextLabel}
+              </div>
+            )
+          : (t.estimateMinutes || t.projectTitle) && (
+              <div
+                className={cn(
+                  "mt-0.5 flex items-center gap-2 text-[11px] text-fg-subtle",
+                  done && "line-through",
+                )}
+              >
+                {t.estimateMinutes != null && (
+                  <span className="tabular-nums">{t.estimateMinutes}m</span>
+                )}
+                {t.estimateMinutes != null && t.projectTitle && <span>·</span>}
+                {t.projectTitle && (
+                  <span className="inline-flex items-center gap-1.5 truncate">
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ background: dotColor }}
+                    />
+                    <span className="truncate">{t.projectTitle}</span>
+                  </span>
+                )}
+              </div>
             )}
-          >
-            {t.estimateMinutes != null && (
-              <span className="tabular-nums">{t.estimateMinutes}m</span>
-            )}
-            {t.estimateMinutes != null && t.projectTitle && <span>·</span>}
-            {t.projectTitle && (
-              <span className="inline-flex items-center gap-1.5 truncate">
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: dotColor }}
-                />
-                <span className="truncate">{t.projectTitle}</span>
-              </span>
-            )}
-          </div>
-        )}
         {(moveMessage || moveError || toggleError) && (
           <div className="mt-0.5 text-[10px]">
             {moveError || toggleError ? (
@@ -324,7 +375,7 @@ function RescheduleChip({
       onClick={onClick}
       disabled={disabled}
       title={title ?? `Reschedule to ${label}`}
-      className="rounded border border-border bg-bg px-1.5 py-px tabular-nums hover:border-fg-muted hover:text-fg disabled:opacity-50"
+      className="relative rounded border border-border bg-bg px-1.5 py-px tabular-nums before:absolute before:-inset-2 before:content-[''] hover:border-fg-muted hover:text-fg disabled:opacity-50"
     >
       {label}
     </button>

@@ -58,9 +58,12 @@ function DashboardBody({ data }: { data: DashboardData }) {
     activeView === "upcoming" ||
     (activeView === "today" && showTodayRecurringSection);
 
+  // Three columns only from lg. The outer columns have 280px minimums, so at the
+  // md breakpoint (768px) they plus the gaps left the middle Projects column
+  // around 112px wide; at lg it gets ~368px.
   const gridLayoutClass =
     activeView === "dashboard"
-      ? "md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]"
+      ? "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(280px,360px)]"
       : wide
       ? "mx-auto w-full max-w-5xl md:grid-cols-2"
       : "mx-auto w-full max-w-2xl";

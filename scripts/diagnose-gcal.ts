@@ -1,6 +1,10 @@
 // Google Calendar sync diagnostics. Bypasses auth — only run locally with
 // creds in .env.local.
-//   npx tsx scripts/diagnose-gcal.ts
+//   npx tsx scripts/diagnose-gcal.ts            read-only report
+//   npx tsx scripts/diagnose-gcal.ts --sync     also attempt a real sync
+//
+// --sync performs the same pull the app does and writes to the database, so it
+// both surfaces the live Google error and repairs the cache when it succeeds.
 //
 // Written after a 77-day silent outage: an empty calendar list made every sync
 // a no-op that still reported success, so nothing surfaced in the UI. This
@@ -25,7 +29,7 @@ function ageLabel(d: Date | null, now: Date): string {
 }
 
 async function main() {
-  const { and, gte, like, lte } = await import("drizzle-orm");
+  const { and, desc, eq, gte, like, lte } = await import("drizzle-orm");
   const { db, schema } = await import("../src/lib/db");
   const {
     calendarIds,
@@ -121,6 +125,48 @@ async function main() {
   if (events.length > 10) console.log(`    …and ${events.length - 10} more`);
   if (events.length === 0) {
     console.log("  Empty while the calendar has events means the sync is not writing.");
+  }
+
+  console.log("\n=== recent gcal audit_log entries ===");
+  const audits = await db
+    .select()
+    .from(schema.auditLog)
+    .where(eq(schema.auditLog.source, "gcal"))
+    .orderBy(desc(schema.auditLog.ts))
+    .limit(10);
+  if (audits.length === 0) {
+    console.log("  none — no calendar sync has recorded an error server-side");
+  }
+  for (const a of audits) {
+    console.log(`  ${a.ts.toISOString()}  ${a.op}${a.error ? `  — ${a.error}` : ""}`);
+  }
+
+  if (!process.argv.includes("--sync")) {
+    console.log("\nRe-run with --sync to attempt a real pull and see the live error.");
+    return;
+  }
+
+  console.log("\n=== live sync attempt ===");
+  const { getCalendarClientFromRefresh, syncGcalIncrementalAll } = await import(
+    "../src/lib/sync/gcal"
+  );
+  const cal = await getCalendarClientFromRefresh();
+  if (!cal) {
+    console.log("  no client — GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN must all be set");
+    return;
+  }
+  try {
+    const result = await syncGcalIncrementalAll(cal);
+    console.log(`  calendars: ${result.calendars}, changed: ${result.changed}`);
+    for (const r of result.results) {
+      console.log(`    ${r.calendarId}: mode=${r.mode} upserted=${r.upserted} deleted=${r.deleted}`);
+    }
+    console.log("  Sync succeeded — reload the dashboard and the events should be there.");
+  } catch (e) {
+    const err = e as { code?: number; message?: string; errors?: unknown };
+    console.log(`  FAILED: ${err.message ?? String(e)}`);
+    if (err.code) console.log(`  http status: ${err.code}`);
+    console.log("  This is the error the app has been hitting.");
   }
 }
 

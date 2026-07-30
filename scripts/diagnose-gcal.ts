@@ -50,6 +50,14 @@ async function main() {
     console.log(`        Set it explicitly in the deployed environment.`);
   }
 
+  if (!process.env.DATABASE_URL) {
+    console.log(
+      "\nDATABASE_URL is not set, so the cached sync state cannot be read.",
+    );
+    console.log("Run this from a checkout with .env.local filled in.");
+    return;
+  }
+
   console.log("\n=== sync_state (gcal%) ===");
   const rows = await db
     .select()

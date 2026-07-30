@@ -72,7 +72,24 @@ export async function getCalendarClientFromRefresh(): Promise<calendar_v3.Calend
   return google.calendar({ version: "v3", auth });
 }
 
-function isRefreshCredentialError(err: unknown) {
+/**
+ * Google's wording for a revoked or expired refresh token is just
+ * "invalid_grant", which tells the reader nothing about what to do. Reconnecting
+ * the account is a manual step, so say that rather than surfacing the raw code.
+ */
+export function describeGcalError(err: unknown): string {
+  const message = (err as Error)?.message ?? String(err);
+  if (isRefreshCredentialError(err)) {
+    return `Google access was revoked (${message}) — sign out and back in to reconnect Calendar`;
+  }
+  const code = (err as { code?: number }).code;
+  if (code === 403) {
+    return `Calendar permission missing (${message}) — re-grant calendar access when signing in`;
+  }
+  return message;
+}
+
+export function isRefreshCredentialError(err: unknown) {
   const e = err as {
     code?: number;
     message?: string;
@@ -302,8 +319,22 @@ export async function syncGcalIncrementalForCalendar(
   const syncToken = row?.cursor;
 
   if (!syncToken || shouldRefreshWindow(row?.lastFullSyncAt ?? null, now)) {
-    const n = await syncCalendarWindow(cal, calendarId, now);
-    return { mode: "full" as const, upserted: n, deleted: 0 };
+    try {
+      const n = await syncCalendarWindow(cal, calendarId, now);
+      return { mode: "full" as const, upserted: n, deleted: 0 };
+    } catch (e) {
+      // This branch previously threw without logging. Since a sync token is
+      // never issued for this window query, it is the *only* branch that runs —
+      // so a revoked refresh token failed here every 30s for 78 days and left
+      // nothing in audit_log to find.
+      await logAudit({
+        source: "gcal",
+        op: isRefreshCredentialError(e) ? "window_auth_error" : "window_sync_error",
+        payload: { calendarId },
+        error: (e as Error).message,
+      });
+      throw e;
+    }
   }
 
   try {

@@ -3,8 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/db", () => ({ db: {}, schema: {} }));
 vi.mock("@/lib/sync/audit", () => ({ logAudit: vi.fn() }));
 
-const { calendarIds, DEFAULT_CALENDAR_IDS, shouldRefreshWindow, WINDOW_REFRESH_INTERVAL_MS } =
-  await import("./gcal");
+const {
+  calendarIds,
+  DEFAULT_CALENDAR_IDS,
+  describeGcalError,
+  shouldRefreshWindow,
+  WINDOW_REFRESH_INTERVAL_MS,
+} = await import("./gcal");
 
 const original = process.env.GCAL_CALENDAR_IDS;
 
@@ -76,5 +81,28 @@ describe("shouldRefreshWindow", () => {
     const nearly = new Date(now.getTime() - WINDOW_REFRESH_INTERVAL_MS + 60_000);
 
     expect(shouldRefreshWindow(nearly, now)).toBe(false);
+  });
+});
+
+describe("describeGcalError", () => {
+  it("turns a revoked refresh token into an actionable message", () => {
+    const message = describeGcalError(new Error("invalid_grant"));
+
+    expect(message).toContain("revoked");
+    expect(message).toContain("sign out");
+  });
+
+  it("recognises a 401 as a credential failure", () => {
+    expect(describeGcalError({ code: 401, message: "Unauthorized" })).toContain("revoked");
+  });
+
+  it("explains a missing calendar scope", () => {
+    const message = describeGcalError({ code: 403, message: "insufficientPermissions" });
+
+    expect(message).toContain("permission");
+  });
+
+  it("passes other errors through unchanged", () => {
+    expect(describeGcalError(new Error("ETIMEDOUT"))).toBe("ETIMEDOUT");
   });
 });

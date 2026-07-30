@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import {
+  describeGcalError,
   getCalendarClientFromAccessToken,
   getCalendarClientFromRefresh,
   syncGcalIncrementalAll,
@@ -28,6 +29,6 @@ export async function POST() {
     const result = await syncGcalIncrementalAll(cal);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: describeGcalError(e) }, { status: 500 });
   }
 }

@@ -83,8 +83,12 @@ export function AutoTodoistSync({
       ) {
         router.refresh();
       }
-    } catch {
-      endSync();
+    } catch (e) {
+      // Recording nothing here left the source merely "stale" rather than
+      // failed, which is how a hard sync outage stayed invisible: amber and
+      // ageing, with no error text and no retry link.
+      const message = e instanceof Error ? e.message : "Network error";
+      endSync({ todoist: message, gcal: message, notion: message });
     } finally {
       inFlight.current = false;
     }

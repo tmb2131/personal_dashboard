@@ -24,7 +24,6 @@ import { SyncStatusProvider } from "./sync-status-context";
 import { TaskDragProvider } from "./task-drag-provider";
 import { TaskList } from "./task-list";
 import { TaskSectionShortcut } from "./task-section-shortcut";
-import { TodayCalendar } from "./today-calendar";
 import {
   TodayRecurringTasksProvider,
   useTodayRecurringTasksVisibility,
@@ -91,9 +90,6 @@ function DashboardBody({ data }: { data: DashboardData }) {
         )}
       >
         <View show={["dashboard", "today", "upcoming"]} className="min-w-0">
-          <View show={["today"]}>
-            <TodayCalendar events={data.todayEvents} initialNow={data.now} />
-          </View>
           <TaskList
             tasks={data.todayTasks}
             overdueTasks={data.overdueTasks}

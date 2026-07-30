@@ -10,11 +10,35 @@ const WATCH_RENEW_MARGIN_MS = 48 * 60 * 60 * 1000;
 const WATCH_ENSURE_LEASE_MS = 30 * 1000;
 let watchEnsureLeaseUntil = 0;
 
-function calendarIds(): string[] {
-  return (process.env.GCAL_CALENDAR_IDS ?? "")
+/**
+ * Used when GCAL_CALENDAR_IDS is unset. Without this the list resolved empty,
+ * and an empty list made every sync a silent no-op that still reported success
+ * — the calendar went 77 days stale with nothing surfaced in the UI.
+ */
+export const DEFAULT_CALENDAR_IDS = [
+  "thomas.brosens@gmail.com",
+  "sriya.sundaresan@gmail.com",
+];
+
+export function calendarIds(): string[] {
+  const configured = (process.env.GCAL_CALENDAR_IDS ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  return configured.length > 0 ? configured : [...DEFAULT_CALENDAR_IDS];
+}
+
+/**
+ * Nothing to sync means something is misconfigured, never success. Throwing
+ * turns the source indicator red with a retry link instead of letting a no-op
+ * masquerade as a healthy sync.
+ */
+function assertCalendarsConfigured(calendars: string[]): void {
+  if (calendars.length === 0) {
+    throw new Error(
+      "No Google calendars resolved — set GCAL_CALENDAR_IDS to a comma-separated list of calendar IDs",
+    );
+  }
 }
 
 export function gcalSyncSourceKey(calendarId: string) {
@@ -244,6 +268,24 @@ async function deleteEventRow(calendarId: string, eventId: string) {
   await db.delete(schema.gcalEvents).where(eq(schema.gcalEvents.id, id));
 }
 
+/** How long a calendar may go on incremental syncs alone before the rolling
+ *  window is re-pulled. */
+export const WINDOW_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Whether the 14-day window needs re-pulling rather than another incremental.
+ *
+ * Incremental sync sends a syncToken with no time bounds, so it only returns
+ * events that *changed* since the token was minted. On its own it never
+ * advances the rolling window and never re-runs the authoritative prune, so
+ * events inside the window that predate the token and have not been edited are
+ * never fetched — which is how the panel ended up empty while sync "succeeded".
+ */
+export function shouldRefreshWindow(lastFullSyncAt: Date | null, now: Date): boolean {
+  if (!lastFullSyncAt) return true;
+  return now.getTime() - lastFullSyncAt.getTime() >= WINDOW_REFRESH_INTERVAL_MS;
+}
+
 /**
  * Incremental sync using stored sync token; falls back to window sync on 410.
  */
@@ -259,14 +301,15 @@ export async function syncGcalIncrementalForCalendar(
     .where(eq(schema.syncState.source, sourceKey));
   const syncToken = row?.cursor;
 
-  if (!syncToken) {
+  if (!syncToken || shouldRefreshWindow(row?.lastFullSyncAt ?? null, now)) {
     const n = await syncCalendarWindow(cal, calendarId, now);
-    return { mode: "full" as const, upserted: n };
+    return { mode: "full" as const, upserted: n, deleted: 0 };
   }
 
   try {
     let pageToken: string | undefined;
     let upserted = 0;
+    let deleted = 0;
     let lastToken: string | null | undefined;
     let first = true;
     do {
@@ -283,6 +326,7 @@ export async function syncGcalIncrementalForCalendar(
         if (!e.id) continue;
         if (e.status === "cancelled") {
           await deleteEventRow(calendarId, e.id);
+          deleted++;
         } else {
           const r = eventToRow(calendarId, e, now);
           if (r) {
@@ -305,7 +349,7 @@ export async function syncGcalIncrementalForCalendar(
         set: { lastIncrementalAt: now },
       });
 
-    return { mode: "incremental" as const, upserted };
+    return { mode: "incremental" as const, upserted, deleted };
   } catch (e) {
     if (isRefreshCredentialError(e)) {
       await logAudit({
@@ -327,7 +371,7 @@ export async function syncGcalIncrementalForCalendar(
       op: "sync_token_reset",
       payload: { calendarId },
     });
-    return { mode: "full_after_410" as const, upserted: n };
+    return { mode: "full_after_410" as const, upserted: n, deleted: 0 };
   }
 }
 
@@ -336,13 +380,18 @@ export async function syncGcalIncrementalAll(
   now = new Date(),
 ) {
   const calendars = calendarIds();
+  assertCalendarsConfigured(calendars);
   const results = await Promise.all(
     calendars.map(async (calendarId) => ({
       calendarId,
       ...(await syncGcalIncrementalForCalendar(cal, calendarId, now)),
     })),
   );
-  const changedCalendars = results.filter((r) => r.upserted > 0).map((r) => r.calendarId);
+  // Deletions count as change too, otherwise a sync that only removes events
+  // reports changed:false and the open tab never refreshes them away.
+  const changedCalendars = results
+    .filter((r) => r.upserted > 0 || r.deleted > 0)
+    .map((r) => r.calendarId);
   return {
     calendars: calendars.length,
     changed: changedCalendars.length > 0,
@@ -352,17 +401,27 @@ export async function syncGcalIncrementalAll(
 }
 
 export async function syncGcal(getAccessToken: AccessTokenSource) {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("No Google access token available");
-  const cal = calendarClientFromAccessToken(accessToken);
+  const calendars = calendarIds();
+  assertCalendarsConfigured(calendars);
+
+  // Prefer the long-lived server refresh token: the session access token is
+  // captured once at sign-in and never refreshed, so it is dead for most of the
+  // 30-day session. Fall back to it only when no refresh token is configured.
+  const cal =
+    (await getCalendarClientFromRefresh()) ??
+    (await (async () => {
+      const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error("No Google access token available");
+      return calendarClientFromAccessToken(accessToken);
+    })());
 
   const now = new Date();
   let total = 0;
-  for (const calendarId of calendarIds()) {
+  for (const calendarId of calendars) {
     total += await syncCalendarWindow(cal, calendarId, now);
   }
 
-  return { events: total, calendars: calendarIds().length };
+  return { events: total, calendars: calendars.length };
 }
 
 /** Register push notifications for one calendar (watch channel). */
@@ -463,6 +522,9 @@ export async function ensureGcalWatchesHealthy() {
 
     return { renewed, skipped: calendarIds().length - renewed, skippedByLease: false };
   } catch (e) {
+    // Clear the lease only on failure, so the next caller retries immediately.
+    // Clearing it in `finally` defeated the lease entirely — it never held.
+    watchEnsureLeaseUntil = 0;
     if (isRefreshCredentialError(e)) {
       await logAudit({
         source: "gcal",
@@ -471,7 +533,5 @@ export async function ensureGcalWatchesHealthy() {
       });
     }
     throw e;
-  } finally {
-    watchEnsureLeaseUntil = 0;
   }
 }

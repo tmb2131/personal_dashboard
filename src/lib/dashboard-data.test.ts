@@ -147,6 +147,44 @@ describe("loadDashboard", () => {
     rows.syncState = [];
   });
 
+  it("reports whichever sync ran most recently, not just the incremental one", async () => {
+    // The window sync writes only lastFullSyncAt. Reading
+    // `lastIncrementalAt ?? lastFullSyncAt` pinned Calendar at a months-old
+    // timestamp while it was in fact syncing fine.
+    rows.syncState = [
+      {
+        source: "gcal:thomas.brosens@gmail.com",
+        lastIncrementalAt: new Date("2026-05-14T09:00:00.000Z"),
+        lastFullSyncAt: new Date("2026-05-07T07:55:00.000Z"),
+        cursor: null,
+      },
+      {
+        source: "gcal:sriya.sundaresan@gmail.com",
+        lastIncrementalAt: null,
+        lastFullSyncAt: new Date("2026-05-07T07:50:00.000Z"),
+        cursor: null,
+      },
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    // Newest across both gcal rows wins, whichever column it came from.
+    expect(data.meta.sources.gcal.lastSyncAt).toEqual(new Date("2026-05-14T09:00:00.000Z"));
+
+    rows.syncState = [
+      {
+        source: "gcal:thomas.brosens@gmail.com",
+        lastIncrementalAt: new Date("2026-05-01T09:00:00.000Z"),
+        lastFullSyncAt: new Date("2026-05-07T07:55:00.000Z"),
+        cursor: "token",
+      },
+    ];
+
+    const fresher = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    expect(fresher.meta.sources.gcal.lastSyncAt).toEqual(new Date("2026-05-07T07:55:00.000Z"));
+  });
+
   it("carries the Notion data version so open tabs can detect webhook writes", async () => {
     const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
 

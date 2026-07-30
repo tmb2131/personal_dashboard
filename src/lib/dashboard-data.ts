@@ -328,8 +328,19 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     db.select().from(schema.syncState),
     getNotionDataVersion(),
   ]);
+  // Whichever ran most recently. `lastIncrementalAt ?? lastFullSyncAt` would
+  // pin a source to an old incremental timestamp forever, because the window
+  // sync writes only lastFullSyncAt — a calendar syncing fine every few hours
+  // still reported "77d ago".
+  const latestSyncOf = (s: { lastIncrementalAt: Date | null; lastFullSyncAt: Date | null }) => {
+    const stamps = [s.lastIncrementalAt, s.lastFullSyncAt].filter((d): d is Date => Boolean(d));
+    return stamps.length > 0
+      ? new Date(Math.max(...stamps.map((d) => d.getTime())))
+      : null;
+  };
+
   const lastSyncAt = syncRows
-    .map((s) => s.lastIncrementalAt ?? s.lastFullSyncAt)
+    .map(latestSyncOf)
     .filter((d): d is Date => Boolean(d))
     .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
@@ -337,7 +348,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     return (
       syncRows
         .filter((s) => predicate(s.source))
-        .map((s) => s.lastIncrementalAt ?? s.lastFullSyncAt)
+        .map(latestSyncOf)
         .filter((d): d is Date => Boolean(d))
         .sort((a, b) => b.getTime() - a.getTime())[0] ?? null
     );

@@ -82,6 +82,68 @@ Without webhooks, use **Run sync now** on the dashboard (or a signed-in `POST` t
 
 After changing the Drizzle schema (e.g. new `sync_state.resource_id` column), run `npx drizzle-kit push` against your database.
 
+## Mac app
+
+`desktop/` wraps the **deployed** dashboard in a native window — it runs no server
+of its own, so the Vercel deployment stays the single source of truth.
+
+### Why the app doesn't use Google sign-in
+
+Google refuses OAuth inside an embedded browser and detects Electron regardless of
+how the user agent and `Sec-CH-UA` client hints are shaped — spoofing both still
+gets "This browser or app may not be secure". Rather than fight that, the desktop
+app authenticates with its own shared secret via a `desktop` credentials provider
+in `src/lib/auth.ts`, and gets an ordinary Auth.js session in return.
+
+This costs nothing in capability: the session is only an access gate. Calendar
+reads run off `GOOGLE_REFRESH_TOKEN` server-side, because the session's Google
+access token expires about an hour into a 30-day session (see the comment in
+`src/app/api/sync/gcal/route.ts`). Browser sign-in is unchanged — Google still
+works there.
+
+**Setup — one shared secret, in two places:**
+
+```bash
+openssl rand -hex 32
+```
+
+1. Server: set `DESKTOP_TOKEN` to that value in `.env.local` **and** in Vercel
+   (`vercel env add DESKTOP_TOKEN production`), then redeploy. Without it on the
+   server, the provider refuses every token and the app falls back to the
+   (Google-blocked) sign-in screen.
+2. App: put the same value in `desktopToken` in
+   `~/Library/Application Support/Personal Dashboard/config.json`.
+
+Rotate by changing both and restarting the app.
+
+```bash
+npm run mac
+```
+
+That produces `desktop/dist/mac-arm64/Personal Dashboard.app` (plus a `.dmg`).
+Drag the app into `/Applications`:
+
+```bash
+cp -R "desktop/dist/mac-arm64/Personal Dashboard.app" /Applications/
+```
+
+Behaviour worth knowing:
+
+- **It signs itself in.** No sign-in screen ever appears; it opens on the dashboard.
+- **Closing the window doesn't quit** — the app stays in the Dock, ready to click. Cmd+Q really quits.
+- It **reloads if the page has been idle for 10+ minutes** or after the Mac wakes, so you never look at stale data.
+- Window size and position are remembered; external links open in your real browser.
+- Cmd+Shift+H returns to the dashboard, Cmd+R reloads.
+
+It points at `APP_URL` by default. To aim it elsewhere, either set
+`DASHBOARD_URL=http://localhost:3000 npm run mac:dev`, or edit `url` in
+`~/Library/Application Support/Personal Dashboard/config.json`.
+
+The build is unsigned (ad-hoc). Because you build it locally it isn't quarantined,
+so it opens with no Gatekeeper prompt — but the `.dmg` will warn if you send it to
+another machine. Rebuild after deploying UI changes only if you changed the icon;
+otherwise the app picks up new deploys on its next reload.
+
 ## Repo layout
 
 ```
@@ -109,4 +171,8 @@ src/
     dashboard-data.ts        — server-side data composition for the page
     utils.ts                 — cn(), date helpers
   proxy.ts                   — auth gate (was middleware.ts; renamed for Next 16)
+desktop/
+  main.js                    — Electron shell around the deployed app
+  offline.html               — shown when the dashboard is unreachable
+  scripts/make-icon.sh       — src/app/icon.svg → build/icon.icns
 ```

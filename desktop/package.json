@@ -1,0 +1,36 @@
+{
+  "name": "personal-dashboard-desktop",
+  "productName": "Personal Dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mac wrapper around the deployed Personal Dashboard.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "./scripts/make-icon.sh",
+    "build": "npm run icon && electron-builder --mac --arm64"
+  },
+  "devDependencies": {
+    "electron": "^40.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.tombrosens.personaldashboard",
+    "productName": "Personal Dashboard",
+    "copyright": "Tom Brosens",
+    "files": ["main.js", "offline.html", "package.json"],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": ["dmg", "dir"],
+      "identity": null
+    },
+    "dmg": {
+      "title": "Personal Dashboard"
+    }
+  }
+}

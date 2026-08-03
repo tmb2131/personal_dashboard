@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Personal Dashboard</title>
+    <style>
+      :root {
+        --bg: #f5f1e8;
+        --text: #1a1814;
+        --muted: #6b6459;
+        --accent: #5b6cff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1a1814;
+          --text: #f0ece3;
+          --muted: #9a9184;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+        -webkit-user-select: none;
+      }
+      main {
+        max-width: 22rem;
+        padding: 0 2rem;
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0 0 1.5rem;
+        color: var(--muted);
+      }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 7px;
+        padding: 0.5rem 1.1rem;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      small {
+        display: block;
+        margin-top: 1.25rem;
+        color: var(--muted);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Can't reach the dashboard</h1>
+      <p>
+        You're offline, or the dashboard isn't responding. Nothing is lost — it
+        will pick up where it left off.
+      </p>
+      <button id="retry" type="button">Try again</button>
+      <small id="status">Retrying automatically…</small>
+    </main>
+    <script>
+      const target = new URLSearchParams(location.search).get("url");
+      const go = () => {
+        if (target) location.href = target;
+      };
+      document.getElementById("retry").addEventListener("click", go);
+      // The main process swaps this page back in if the retry also fails, so a
+      // plain interval is enough to recover once the network returns.
+      setInterval(go, 15000);
+    </script>
+  </body>
+</html>

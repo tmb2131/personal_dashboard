@@ -19,10 +19,17 @@ export async function POST() {
         .catch((e) => ({ ok: false as const, error: (e as Error).message }))
     : { ok: false as const, skipped: "no-refresh-token" };
 
+  // syncGcal prefers the server refresh token and only falls back to the
+  // session token, so gate on either being present — a desktop-app session
+  // carries no Google token at all and would otherwise skip Calendar silently.
+  const canSyncGcal = Boolean(process.env.GOOGLE_REFRESH_TOKEN) || Boolean(accessToken);
+
   const results = await Promise.allSettled([
     syncNotion(),
     syncTodoist(),
-    accessToken ? syncGcal(async () => accessToken) : Promise.resolve({ events: 0, calendars: 0, skipped: "no-token" }),
+    canSyncGcal
+      ? syncGcal(async () => accessToken)
+      : Promise.resolve({ events: 0, calendars: 0, skipped: "no-token" }),
   ]);
   const todoistReconciliation =
     results[1].status === "fulfilled"

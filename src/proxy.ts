@@ -15,5 +15,10 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.json).*)"],
+  // The manifest and the icon it points at must stay reachable signed-out:
+  // browsers fetch the manifest without credentials, so gating it behind auth
+  // turns it into a redirect to /sign-in and the install prompt never appears.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg).*)",
+  ],
 };

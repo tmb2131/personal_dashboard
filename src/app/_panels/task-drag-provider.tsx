@@ -59,6 +59,12 @@ export function TaskDragProvider({ children }: { children: ReactNode }) {
 
   return (
     <DndContext
+      // Without an explicit id, dnd-kit derives its `aria-describedby` ids from
+      // a module-level counter. The counter advances at a different rate on the
+      // server than in a freshly loaded client, so restoring a saved view
+      // (which mounts a different set of droppables during hydration) produced
+      // a `DndDescribedBy-N` hydration mismatch on every drag handle.
+      id="dashboard-tasks"
       sensors={sensors}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}

@@ -367,11 +367,61 @@ describe("loadDashboard", () => {
           source: "todoist",
           todoistTaskId: "todoist-floss",
           hasRecurringTag: true,
+          // Todoist's actual repeat rule, distinct from the folder-based tag —
+          // the Today row keeps the due time read-only when this is set.
+          dueIsRecurring: true,
         }),
       ]),
     );
     expect(data.meta.todayOpenCount).toBe(0);
     expect(data.meta.todayOpenRecurringCount).toBe(1);
+  });
+
+  it("flags which today tasks carry a time of day, and which repeat", async () => {
+    rows.todoistTasks = [
+      // API v1 shape: no `datetime` key, the time rides along in `date`.
+      todoistTask({
+        id: "todoist-timed-v1",
+        content: "Timed v1",
+        dueDate: new Date("2026-05-07T13:30:00.000Z"),
+        raw: { due: { date: "2026-05-07T14:30:00", string: "May 7 2:30 PM" } },
+      }),
+      // REST v2 shape, still present in rows cached before the SDK upgrade.
+      todoistTask({
+        id: "todoist-timed-v2",
+        content: "Timed v2",
+        dueDate: new Date("2026-05-07T13:30:00.000Z"),
+        raw: { due: { date: "2026-05-07", datetime: "2026-05-07T13:30:00.000Z" } },
+      }),
+      todoistTask({
+        id: "todoist-all-day",
+        content: "All day",
+        dueDate: new Date("2026-05-07T00:00:00.000Z"),
+        raw: { due: { date: "2026-05-07" } },
+      }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T20:08:00.000Z"));
+
+    expect(data.todayTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Timed v1",
+          dateHasTime: true,
+          dueIsRecurring: false,
+        }),
+        expect.objectContaining({
+          title: "Timed v2",
+          dateHasTime: true,
+          dueIsRecurring: false,
+        }),
+        expect.objectContaining({
+          title: "All day",
+          dateHasTime: false,
+          dueIsRecurring: false,
+        }),
+      ]),
+    );
   });
 
   it("surfaces open tasks whose dates are entirely in the past as overdue", async () => {

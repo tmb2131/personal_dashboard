@@ -11,13 +11,14 @@ import {
 } from "../actions";
 import { DragHandle } from "./drag-handle";
 import { formatTaskDue, TaskDetailExpansion } from "./task-detail-expansion";
+import { TaskTimeChip } from "./task-time-chip";
 import { RESCHEDULE_PRESETS, useTaskRowActions } from "./use-task-row-actions";
 
 export function TaskRow({
   t,
   notionProjectPicklist = [],
   contextLabel,
-  showDueOnRight = false,
+  dueDisplay = "none",
   showUndoChip = false,
   showCrossPost = true,
 }: {
@@ -25,8 +26,12 @@ export function TaskRow({
   notionProjectPicklist?: { id: string; title: string }[];
   /** Replaces the default estimate/project line, e.g. "Todoist: Personal". */
   contextLabel?: string | null;
-  /** Trailing due-date button, used by the Personal / Next 7 Days list. */
-  showDueOnRight?: boolean;
+  /**
+   * Trailing due affordance. `"full"` is the day + time button used by the
+   * Personal / Next 7 Days list, which opens the detail panel. `"time"` is the
+   * inline-editable time chip used by Today, where the day is already implied.
+   */
+  dueDisplay?: "none" | "time" | "full";
   /**
    * Transient undo affordance. Needed only where a completed task leaves the
    * payload outright; the Today list keeps completed rows in its Done group.
@@ -223,7 +228,7 @@ export function TaskRow({
               </button>
             </span>
           )}
-          {showDueOnRight && (
+          {dueDisplay === "full" && (
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
@@ -233,6 +238,7 @@ export function TaskRow({
               {formatTaskDue(t)}
             </button>
           )}
+          {dueDisplay === "time" && <TaskTimeChip t={t} />}
         </div>
         {canReschedule && (
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-fg-subtle md:hidden">

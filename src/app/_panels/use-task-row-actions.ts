@@ -3,15 +3,12 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Subtask } from "@/lib/dashboard-data";
+import { formatDateOnlyLocal } from "@/lib/date-utils";
+import { formatHHMM } from "@/lib/utils";
 import { setTodoistTaskDueAction, toggleTaskDoneAction } from "../actions";
 
 const UNDO_TIMEOUT_MS = 5_000;
 const MOVE_FEEDBACK_MS = 2_500;
-
-function toIsoDate(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 export function useTaskRowActions(t: Subtask) {
   const router = useRouter();
@@ -108,7 +105,7 @@ export function useTaskRowActions(t: Subtask) {
     if (!canReschedule) return;
     const target = new Date();
     target.setDate(target.getDate() + daysFromNow);
-    const iso = toIsoDate(target);
+    const iso = formatDateOnlyLocal(target);
     setMoveError(null);
     setToggleError(null);
     setMoveMessage(`Moved to ${label}`);
@@ -122,7 +119,9 @@ export function useTaskRowActions(t: Subtask) {
         todoistTaskId: t.todoistTaskId,
         notionPageId: t.notionPageId,
         dueDate: iso,
-        dueTime: null,
+        // A preset moves the day, not the time — carrying the existing
+        // time-of-day over keeps "2:30p today" from becoming an all-day task.
+        dueTime: t.dateHasTime && t.date ? formatHHMM(t.date) : null,
       });
       if (!result.ok) {
         setMoveError(result.error);

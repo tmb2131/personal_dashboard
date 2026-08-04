@@ -12,6 +12,7 @@ import {
 import { db, schema } from "@/lib/db";
 import { extractPriority, extractProject, toTodoistApiPriority } from "@/lib/quick-add";
 import { isTravelEventsCategory } from "@/lib/utils";
+import { todoistRecurrenceDateArg } from "@/lib/todoist-due";
 import { logAudit } from "@/lib/sync/audit";
 import { PRIORITY_TODOIST_TO_NOTION } from "@/lib/sync/mappings";
 import {
@@ -228,6 +229,107 @@ type DueInput = {
   todoistPayload: { due_date?: string; due_datetime?: string; due_string?: string };
 };
 
+/**
+ * The parts of a Todoist due that describe its repeat rule, read from the cache
+ * so a date move can put them back untouched.
+ */
+type RecurrenceSnapshot = {
+  isRecurring: boolean;
+  /** The natural-language rule, e.g. "every day 7pm". */
+  ruleString: string | null;
+  lang: string | null;
+  timezone: string | null;
+};
+
+async function readRecurrenceSnapshot(taskId: string): Promise<RecurrenceSnapshot> {
+  const [task] = await db
+    .select({
+      raw: schema.todoistTasks.raw,
+      dueString: schema.todoistTasks.dueString,
+      dueIsRecurring: schema.todoistTasks.dueIsRecurring,
+    })
+    .from(schema.todoistTasks)
+    .where(eq(schema.todoistTasks.id, taskId));
+
+  const rawDue = asRecord(asRecord(task?.raw).due);
+  const asString = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+  return {
+    isRecurring: Boolean(task?.dueIsRecurring || rawDue.isRecurring || rawDue.is_recurring),
+    ruleString: task?.dueString ?? asString(rawDue.string),
+    lang: asString(rawDue.lang),
+    timezone: asString(rawDue.timezone),
+  };
+}
+
+/**
+ * Move a recurring task's next occurrence without disturbing its repeat rule.
+ *
+ * The REST endpoint can only take `due_date`/`due_datetime`/`due_string`, and any
+ * of them replaces the whole due — which drops the recurrence. The Sync API's
+ * `item_update` accepts a full `due` object instead, so we hand back the original
+ * `string` and `is_recurring` alongside the new date, which is what Todoist's own
+ * clients do when you reschedule a repeating task.
+ */
+async function updateTodoistRecurringDueViaSync(args: {
+  token: string;
+  taskId: string;
+  /** Local `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ss`, or a UTC ISO string when the rule is zoned. */
+  date: string;
+  recurrence: RecurrenceSnapshot;
+}) {
+  const body = new URLSearchParams({
+    commands: JSON.stringify([
+      {
+        type: "item_update",
+        uuid: crypto.randomUUID(),
+        args: {
+          id: args.taskId,
+          due: {
+            date: args.date,
+            string: args.recurrence.ruleString,
+            is_recurring: true,
+            lang: args.recurrence.lang ?? "en",
+            timezone: args.recurrence.timezone,
+          },
+        },
+      },
+    ]),
+  });
+
+  const res = await fetch("https://api.todoist.com/api/v1/sync", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${args.token}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+    cache: "no-store",
+  });
+
+  const text = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(text || `HTTP ${res.status}: ${res.statusText}`);
+
+  // The Sync API answers 200 even when an individual command fails; the verdict
+  // per command lives in sync_status.
+  const status = asRecord(asRecord(safeJson(text)).sync_status);
+  for (const value of Object.values(status)) {
+    if (value === "ok") continue;
+    const err = asRecord(value);
+    throw new Error(
+      typeof err.error === "string" ? err.error : `Todoist rejected the reschedule: ${text.slice(0, 200)}`,
+    );
+  }
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function parseDueInput(dueDateInput: string | null, dueTimeInput?: string | null): DueInput {
   const dueDate = dueDateInput?.trim() || null;
   const dueTime = dueTimeInput?.trim() || null;
@@ -268,21 +370,35 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-async function patchTodoistDueCache(taskId: string, due: DueInput) {
+async function patchTodoistDueCache(
+  taskId: string,
+  due: DueInput,
+  /** Set when the write preserved a repeat rule, so the cache keeps it too. */
+  keptRecurrence?: RecurrenceSnapshot | null,
+) {
   const [task] = await db
     .select({ raw: schema.todoistTasks.raw })
     .from(schema.todoistTasks)
     .where(eq(schema.todoistTasks.id, taskId));
   const raw = asRecord(task?.raw);
   const existingDue = asRecord(raw.due);
+  // A preserved rule keeps its natural-language string ("every day 7pm");
+  // otherwise the string just echoes the date we set.
+  const dueString = keptRecurrence?.ruleString ?? due.dueDate;
 
   if (due.dueDate) {
+    // Todoist API v1 has no `datetime` key — a timed due is a `date` carrying a
+    // `T`. Write that shape so the patch matches what the next sync overwrites
+    // it with, and keep `datetime` in step for any v2-era reader.
     const nextDue: Record<string, unknown> = {
       ...existingDue,
-      date: due.dueDate,
-      string: due.dueDate,
+      date: due.dueTime ? `${due.dueDate}T${due.dueTime}:00` : due.dueDate,
+      string: dueString,
     };
-    if (typeof existingDue.isRecurring === "boolean") nextDue.isRecurring = existingDue.isRecurring;
+    if (keptRecurrence) nextDue.isRecurring = true;
+    else if (typeof existingDue.isRecurring === "boolean") {
+      nextDue.isRecurring = existingDue.isRecurring;
+    }
     if (due.dueTime && due.dueAt) {
       nextDue.datetime = due.dueAt.toISOString();
     } else {
@@ -297,7 +413,8 @@ async function patchTodoistDueCache(taskId: string, due: DueInput) {
     .update(schema.todoistTasks)
     .set({
       dueDate: due.dueAt,
-      dueString: due.dueDate,
+      dueString,
+      dueIsRecurring: Boolean(keptRecurrence),
       raw,
       updatedAt: new Date(),
     })
@@ -571,14 +688,36 @@ export async function setTodoistTaskDueAction(args: {
         .where(eq(schema.taskLinks.id, link.id));
     }
 
+    let keptRecurrence: RecurrenceSnapshot | null = null;
+
     if (todoistTaskId) {
-      await updateTodoistTaskDueViaRest({
-        token: todoistToken!,
-        taskId: todoistTaskId,
-        payload: due.todoistPayload,
-      });
+      // Moving a repeating task means moving its next occurrence, not replacing
+      // the rule — REST can only do the latter, so those go through the Sync API.
+      // Clearing the date (no `dueDate`) genuinely does end the repeat, so it
+      // stays on the REST path.
+      const recurrence = await readRecurrenceSnapshot(todoistTaskId);
+      if (recurrence.isRecurring && recurrence.ruleString && due.dueDate) {
+        await updateTodoistRecurringDueViaSync({
+          token: todoistToken!,
+          taskId: todoistTaskId,
+          date: todoistRecurrenceDateArg({
+            dueDate: due.dueDate,
+            dueTime: due.dueTime,
+            dueAt: due.dueAt,
+            timezone: recurrence.timezone,
+          }),
+          recurrence,
+        });
+        keptRecurrence = recurrence;
+      } else {
+        await updateTodoistTaskDueViaRest({
+          token: todoistToken!,
+          taskId: todoistTaskId,
+          payload: due.todoistPayload,
+        });
+      }
       await syncTodoistTasksByIds([todoistTaskId]).catch(() => {});
-      await patchTodoistDueCache(todoistTaskId, due);
+      await patchTodoistDueCache(todoistTaskId, due, keptRecurrence);
     }
     if (notionPageId) {
       await updateNotionTaskDate(

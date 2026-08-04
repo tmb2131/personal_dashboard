@@ -439,6 +439,8 @@ export type NotionTodoFieldUpdate = {
   date?: { value: Date; isDatetime: boolean } | null;
   /** Pass `null` to clear the priority select. */
   priority?: NotionPage["priority"] | null;
+  /** The project's one-line status / next action. Pass `null` or "" to clear. */
+  keyNextStep?: string | null;
 };
 
 /**
@@ -467,6 +469,12 @@ export async function updateNotionTodoFields(
   }
   if (fields.priority !== undefined) {
     properties.Priority = fields.priority ? { select: { name: fields.priority } } : { select: null };
+  }
+  if (fields.keyNextStep !== undefined) {
+    const text = fields.keyNextStep?.trim() ?? "";
+    properties["Key Next Step"] = {
+      rich_text: text ? [{ type: "text" as const, text: { content: text } }] : [],
+    };
   }
 
   if (Object.keys(properties).length === 0) return;

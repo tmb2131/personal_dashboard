@@ -3,11 +3,12 @@
 import { categoryDot, cn, shortCategoryLabel } from "@/lib/utils";
 import type { Project, ProjectGroups } from "@/lib/dashboard-data";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState, useTransition } from "react";
+import { type FormEvent, useRef, useState, useTransition } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   createProjectAction,
   setProjectFocusAction,
+  setProjectKeyNextStepAction,
   setProjectStatusAction,
 } from "../actions";
 import { EmptyState } from "./empty-state";
@@ -83,7 +84,117 @@ function FocusStarIcon({ filled }: { filled: boolean }) {
   );
 }
 
-function ProjectRow({ p }: { p: Project }) {
+/**
+ * The one-line status under a project title. Shows the project's own
+ * `Key Next Step` when set, otherwise the soonest open sub-task as a dimmed
+ * hint. Click to edit; the editor only ever seeds from the real stored value so
+ * an inferred hint is never silently promoted into a Notion write.
+ */
+function NextStepLine({
+  projectId,
+  keyNextStep,
+  fallback,
+}: {
+  projectId: string;
+  keyNextStep: string | null;
+  fallback: string | null;
+}) {
+  const router = useRouter();
+  const [override, setOverride] = useState<string | null | undefined>(undefined);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  // Escape sets editing=false, which fires blur — without this the blur handler
+  // would immediately re-save the value the user just abandoned.
+  const cancelled = useRef(false);
+
+  const current = override !== undefined ? override : keyNextStep;
+
+  const open = () => {
+    setDraft(current ?? "");
+    setError(null);
+    cancelled.current = false;
+    setEditing(true);
+  };
+
+  const save = () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next === (current ?? "")) return;
+    const previous = current;
+    setOverride(next || null);
+    setError(null);
+    startTransition(async () => {
+      const result = await setProjectKeyNextStepAction({
+        notionPageId: projectId,
+        keyNextStep: next,
+      });
+      if (!result.ok) {
+        setOverride(previous);
+        setError(result.error);
+        return;
+      }
+      setOverride(undefined);
+      router.refresh();
+    });
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (!cancelled.current) save();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cancelled.current = true;
+            setEditing(false);
+          }
+        }}
+        placeholder={fallback ?? "What's the next step?"}
+        aria-label="Next step"
+        className="h-7 w-full rounded border border-border bg-bg px-2 text-[12px] text-fg placeholder:text-fg-subtle"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={open}
+      disabled={pending}
+      title="Edit next step"
+      className={cn(
+        "block w-full truncate text-left text-[12px] transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg",
+        pending && "opacity-60",
+      )}
+    >
+      {current ? (
+        <span className="text-fg-muted">
+          <span className="text-fg-subtle">→</span> {current}
+        </span>
+      ) : fallback ? (
+        <span className="text-fg-subtle">
+          <span aria-hidden>→</span> {fallback}
+        </span>
+      ) : (
+        <span className="text-fg-subtle">No next step</span>
+      )}
+      {error && <span className="ml-2 text-danger">{error}</span>}
+    </button>
+  );
+}
+
+/** Shared by the Projects and Categories views — both render the same row. */
+export function ProjectRow({ p }: { p: Project }) {
   const router = useRouter();
   const [focusOverride, setFocusOverride] = useState<boolean | null>(null);
   const [statusOverride, setStatusOverride] = useState<ProjectStatus | null>(null);
@@ -113,7 +224,6 @@ function ProjectRow({ p }: { p: Project }) {
       if (at !== bt) return at - bt;
       return a.title.localeCompare(b.title);
     })[0];
-  const nextStep = p.keyNextStep ?? fallbackSubtask?.title ?? null;
   const sortedSubtasks = p.subtasks.filter((s) => !s.done).sort((a, b) => {
     const at = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
     const bt = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
@@ -220,13 +330,11 @@ function ProjectRow({ p }: { p: Project }) {
         <div className="mt-1 ml-[44px] text-[11px] text-danger">{statusError}</div>
       )}
       <div className="mt-1.5 ml-[44px]">
-        {nextStep ? (
-          <span className="truncate text-[12px] text-fg-muted">
-            <span className="text-fg-subtle">→</span> {nextStep}
-          </span>
-        ) : (
-          <span className="text-[12px] text-fg-subtle">No next step</span>
-        )}
+        <NextStepLine
+          projectId={p.id}
+          keyNextStep={p.keyNextStep}
+          fallback={fallbackSubtask?.title ?? null}
+        />
       </div>
       {expanded && (
         <ProjectSubtaskPlanner parentId={p.id} subtasks={sortedSubtasks} className="mt-2 ml-[44px]" />

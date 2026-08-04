@@ -110,6 +110,20 @@ export type ProjectGroups = {
   all: Project[];
 };
 
+/**
+ * One Notion category with the open projects filed under it. The category layer
+ * already exists in Notion (e.g. "Nilan" holds `OCI`, `Valaikappu`, …), so this
+ * is a regrouping of `ProjectGroups.all` rather than a separate hierarchy.
+ */
+export type CategoryGroup = {
+  /** `null` for the synthetic "Uncategorized" bucket. */
+  id: string | null;
+  title: string;
+  projects: Project[];
+  /** Sum of open sub-tasks across `projects`, for the collapsed header count. */
+  openSubtasks: number;
+};
+
 export type DayGroupedEvents = {
   bucket: DayBucket;
   events: Next3DaysEvent[];
@@ -150,6 +164,8 @@ export type DashboardData = {
   notionCategoryPicklist: { id: string; title: string }[];
   next3Days: DayGroupedEvents[];
   projects: ProjectGroups;
+  /** `projects.all` regrouped by Notion category, for the Categories view. */
+  projectsByCategory: CategoryGroup[];
   upcomingTrips: Project[];
   datelessTrips: Project[];
   lifeAreas: Project[];
@@ -846,6 +862,52 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     all: sortedProjects,
   };
 
+  // ----- Categories: the same projects, regrouped by their Notion category.
+  // Travel/Events is excluded because it holds ~110 rows and already has the
+  // dedicated Trips view; a section that size would drown every other category.
+  const projectsForCategory = new Map<string | null, Project[]>();
+  for (const p of sortedProjects) {
+    const key = p.categoryId ?? null;
+    const arr = projectsForCategory.get(key) ?? [];
+    arr.push(p);
+    projectsForCategory.set(key, arr);
+  }
+  const toCategoryGroup = (
+    id: string | null,
+    title: string,
+    list: Project[],
+  ): CategoryGroup => ({
+    id,
+    title,
+    projects: list,
+    openSubtasks: list.reduce((sum, p) => sum + p.openSubtasks, 0),
+  });
+  // Every non-travel category is listed even when it currently has no open
+  // projects, so the set of sections stays stable as work comes and goes.
+  const listedCategoryIds = new Set<string>();
+  const projectsByCategory: CategoryGroup[] = notionCategoryPicklist
+    .filter((c) => !isTravelEventsCategory(c.title))
+    .map((c) => {
+      listedCategoryIds.add(c.id);
+      return toCategoryGroup(c.id, c.title, projectsForCategory.get(c.id) ?? []);
+    })
+    .sort((a, b) => a.title.localeCompare(b.title));
+  // Projects whose category is archived (so absent from the picklist) still have
+  // to land somewhere — group them under their own stored title.
+  const strayGroups = new Map<string, Project[]>();
+  for (const [key, list] of projectsForCategory) {
+    if (key === null || listedCategoryIds.has(key)) continue;
+    const title = list[0]?.categoryTitle ?? "Uncategorized";
+    strayGroups.set(title, [...(strayGroups.get(title) ?? []), ...list]);
+  }
+  for (const [title, list] of [...strayGroups].sort((a, b) => a[0].localeCompare(b[0]))) {
+    projectsByCategory.push(toCategoryGroup(null, title, list));
+  }
+  const uncategorized = projectsForCategory.get(null) ?? [];
+  if (uncategorized.length > 0) {
+    projectsByCategory.push(toCategoryGroup(null, "Uncategorized", uncategorized));
+  }
+
   // ----- Trips (Travel/Events only; include Done; start date today or later)
   const upcomingTrips = allProjects
     .filter((p) => isTravelEventsCategory(p.categoryTitle))
@@ -909,6 +971,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     notionCategoryPicklist,
     next3Days,
     projects,
+    projectsByCategory,
     upcomingTrips,
     datelessTrips,
     lifeAreas,

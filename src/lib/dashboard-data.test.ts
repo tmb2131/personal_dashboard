@@ -666,6 +666,72 @@ describe("loadDashboard", () => {
     );
   });
 
+  it("groups projects by Notion category for the Categories view", async () => {
+    rows.notionCategories = [
+      { id: "cat-nilan", title: "Nilan", kind: null, archived: false, raw: {} },
+      { id: "cat-home", title: "Home", kind: null, archived: false, raw: {} },
+      { id: "cat-travel", title: "Travel/Events", kind: null, archived: false, raw: {} },
+      { id: "cat-empty", title: "Finances", kind: null, archived: false, raw: {} },
+    ];
+    rows.notionPages = [
+      notionPage({ id: "oci", title: "OCI", categoryId: "cat-nilan" }),
+      notionPage({
+        id: "valaikappu",
+        title: "Valaikappu",
+        categoryId: "cat-nilan",
+      }),
+      notionPage({ id: "invite", title: "Invite", parentId: "valaikappu" }),
+      notionPage({ id: "catering", title: "Food - catering", parentId: "valaikappu" }),
+      notionPage({ id: "gutters", title: "Clean gutters", categoryId: "cat-home" }),
+      notionPage({ id: "japan", title: "Japan trip", categoryId: "cat-travel" }),
+      notionPage({ id: "stray", title: "No category", categoryId: null }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    // Alphabetical, with the synthetic bucket last. Travel/Events is deliberately
+    // absent — it lives in the Trips view.
+    expect(data.projectsByCategory.map((c) => c.title)).toEqual([
+      "Finances",
+      "Home",
+      "Nilan",
+      "Uncategorized",
+    ]);
+
+    const nilan = data.projectsByCategory.find((c) => c.title === "Nilan");
+    expect(nilan?.projects.map((p) => p.title).sort()).toEqual(["OCI", "Valaikappu"]);
+    // Sub-tasks stay attached to their project, and roll up into the header count.
+    expect(nilan?.openSubtasks).toBe(2);
+
+    // A category with no open projects still gets a section, so the list is stable.
+    expect(data.projectsByCategory.find((c) => c.title === "Finances")?.projects).toEqual([]);
+    expect(
+      data.projectsByCategory.find((c) => c.title === "Uncategorized")?.projects,
+    ).toEqual([expect.objectContaining({ title: "No category" })]);
+    expect(
+      data.projectsByCategory.flatMap((c) => c.projects).map((p) => p.title),
+    ).not.toContain("Japan trip");
+  });
+
+  it("keeps projects whose category has been archived out of the picklist visible", async () => {
+    rows.notionCategories = [
+      { id: "cat-home", title: "Home", kind: null, archived: false, raw: {} },
+      { id: "cat-old", title: "2025 Goals", kind: null, archived: true, raw: {} },
+    ];
+    rows.notionPages = [
+      notionPage({ id: "gutters", title: "Clean gutters", categoryId: "cat-home" }),
+      notionPage({ id: "goal", title: "Old goal", categoryId: "cat-old" }),
+    ];
+
+    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
+
+    // The archived category is gone from the picklist, but its project must not
+    // silently disappear from the view.
+    expect(
+      data.projectsByCategory.flatMap((c) => c.projects).map((p) => p.title),
+    ).toContain("Old goal");
+  });
+
   it("flags overdue Recurring-folder tasks so the recurring toggle governs them", async () => {
     rows.todoistProjects = [
       {

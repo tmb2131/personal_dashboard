@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { DashboardData } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 import { AutoTodoistSync } from "./auto-todoist-sync";
+import { Categories } from "./categories";
 import { DashboardMetaProvider } from "./dashboard-meta-context";
 import { DayRolloverRefresh } from "./day-rollover-refresh";
 import {
@@ -130,6 +131,12 @@ function DashboardBody({ data }: { data: DashboardData }) {
             groups={data.projects}
             categories={data.notionCategoryPicklist}
           />
+        </View>
+
+        {/* Its own View, never merged into the Projects one: both render
+            ProjectRow, whose dnd droppable id would collide if mounted twice. */}
+        <View show={["categories"]} className="min-w-0">
+          <Categories groups={data.projectsByCategory} />
         </View>
 
         <View show={["dashboard", "trips"]} className="min-w-0">

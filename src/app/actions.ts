@@ -31,6 +31,7 @@ import {
   updateNotionTaskDate,
   updateNotionTaskParent,
   updateNotionTripDates,
+  updateNotionTodoFields,
   updateNotionTodoStatus,
 } from "@/lib/sync/notion";
 import { reconcileAllLinks, type ReconcileSummary } from "@/lib/sync/reconcile";
@@ -1080,6 +1081,55 @@ export async function setProjectStatusAction(args: {
     await logAudit({
       source: "dashboard",
       op: "set_project_status_error",
+      payload: args,
+      error: (e as Error).message,
+    });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** Max length accepted for a project's one-line next step. */
+const KEY_NEXT_STEP_MAX = 200;
+
+/**
+ * Set (or clear) a project's "Key Next Step" — the one-line status shown under
+ * each project row, written either by hand here or by Claude via the Notion MCP.
+ *
+ * Deliberately no Todoist mirror: `syncHash()` in sync/mappings.ts does not fold
+ * in `keyNextStep`, so this field cannot drift the Todoist side and there is no
+ * echo to guard against with `pendingOrigin`.
+ */
+export async function setProjectKeyNextStepAction(args: {
+  notionPageId: string;
+  keyNextStep: string;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionPageId) return { ok: false, error: "Missing Notion page" };
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  const value = args.keyNextStep.trim();
+  if (value.length > KEY_NEXT_STEP_MAX) {
+    return { ok: false, error: `Keep it under ${KEY_NEXT_STEP_MAX} characters` };
+  }
+
+  try {
+    await updateNotionTodoFields(args.notionPageId, { keyNextStep: value });
+    await db
+      .update(schema.notionPages)
+      .set({ keyNextStep: value || null, updatedAt: new Date() })
+      .where(eq(schema.notionPages.id, args.notionPageId));
+
+    await logAudit({
+      source: "dashboard",
+      op: "set_project_key_next_step",
+      payload: args,
+    });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "set_project_key_next_step_error",
       payload: args,
       error: (e as Error).message,
     });

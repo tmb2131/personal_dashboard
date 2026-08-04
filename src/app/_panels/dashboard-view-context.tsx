@@ -16,6 +16,7 @@ export const VIEWS = [
   { id: "today", label: "Today" },
   { id: "upcoming", label: "Upcoming" },
   { id: "projects", label: "Projects" },
+  { id: "categories", label: "Categories" },
   { id: "trips", label: "Trips" },
 ] as const;
 

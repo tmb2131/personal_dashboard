@@ -4,6 +4,11 @@ import type { InferSelectModel } from "drizzle-orm";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
 import { parseDateOnlyLocal } from "@/lib/date-utils";
 import { extractMeetingUrl } from "@/lib/meeting-url";
+import {
+  parseTodoistDue,
+  todoistDueHasTime as todoistDueHasTimeOf,
+  type TodoistDueLike,
+} from "@/lib/todoist-due";
 import { getNotionDataVersion } from "@/lib/sync/data-version";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
@@ -58,6 +63,13 @@ export type Subtask = {
   estimateMinutes: number | null;
   /** Todoist task from the Recurring project folder; hidden from Today by default, reveal via toggle */
   hasRecurringTag: boolean;
+  /**
+   * Todoist's actual repeat rule ("every day at 7pm"). Distinct from
+   * `hasRecurringTag`, which is only about the project folder. Writing a plain
+   * due date/datetime to one of these wipes the rule, so the UI keeps their due
+   * time read-only.
+   */
+  dueIsRecurring: boolean;
   /**
    * Whole days the task has slipped past its date/deadline (≥ 1), or null when
    * it is not overdue. Only set when every date the task has is before today.
@@ -199,15 +211,8 @@ function normalizedTitle(title: string | null | undefined): string | null {
   return v;
 }
 
-function todoistRawDue(t: TodoistTask) {
-  const raw = t.raw as {
-    due?: {
-      datetime?: string | null;
-      date?: string | null;
-      due_datetime?: string | null;
-      due_date?: string | null;
-    } | null;
-  } | null;
+function todoistRawDue(t: TodoistTask): TodoistDueLike {
+  const raw = t.raw as { due?: TodoistDueLike } | null;
   return raw?.due ?? null;
 }
 
@@ -217,14 +222,7 @@ function todoistRawDeadline(t: TodoistTask) {
 }
 
 function todoistDueDate(t: TodoistTask): Date | null {
-  const rawDue = todoistRawDue(t);
-  return (
-    t.dueDate ??
-    parseTodoistDate(rawDue?.datetime) ??
-    parseTodoistDate(rawDue?.due_datetime) ??
-    parseTodoistDate(rawDue?.date) ??
-    parseTodoistDate(rawDue?.due_date)
-  );
+  return t.dueDate ?? parseTodoistDue(todoistRawDue(t));
 }
 
 function todoistDeadlineDate(t: TodoistTask): Date | null {
@@ -233,8 +231,7 @@ function todoistDeadlineDate(t: TodoistTask): Date | null {
 }
 
 function todoistDueHasTime(t: TodoistTask): boolean {
-  const rawDue = todoistRawDue(t);
-  return Boolean(rawDue?.datetime ?? rawDue?.due_datetime);
+  return todoistDueHasTimeOf(todoistRawDue(t));
 }
 
 function normalizeProjectName(name: string): string {
@@ -445,6 +442,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       categoryTitle: cat?.title ?? null,
       estimateMinutes: null,
       hasRecurringTag: isRecurringProjectTask(matched?.projectId),
+      dueIsRecurring: Boolean(matched?.dueIsRecurring),
       overdueDays: overdueDaysFor(date, deadline),
       updatedAt: p.updatedAt ?? null,
     };
@@ -574,6 +572,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           categoryTitle: todoistProject?.name ?? null,
           estimateMinutes: null,
           hasRecurringTag: isRecurringProjectTask(t.projectId),
+          dueIsRecurring: Boolean(t.dueIsRecurring),
           overdueDays: null,
           updatedAt: t.updatedAt ?? null,
         });
@@ -606,6 +605,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         categoryTitle: todoistProject?.name ?? null,
         estimateMinutes: null,
         hasRecurringTag: isRecurringProjectTask(t.projectId),
+        dueIsRecurring: Boolean(t.dueIsRecurring),
         overdueDays: null,
         updatedAt: t.updatedAt ?? null,
       });
@@ -632,6 +632,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         categoryTitle: todoistProject?.name ?? null,
         estimateMinutes: null,
         hasRecurringTag: isRecurringProjectTask(t.projectId),
+        dueIsRecurring: Boolean(t.dueIsRecurring),
         overdueDays: tOverdueDays,
         updatedAt: t.updatedAt ?? null,
       });
@@ -664,6 +665,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         categoryTitle: todoistProject?.name ?? null,
         estimateMinutes: null,
         hasRecurringTag: isRecurringProjectTask(t.projectId),
+        dueIsRecurring: Boolean(t.dueIsRecurring),
         overdueDays: null,
         updatedAt: t.updatedAt ?? null,
       });
@@ -688,6 +690,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       categoryTitle: todoistProject?.name ?? null,
       estimateMinutes: null,
       hasRecurringTag: isRecurringProjectTask(t.projectId),
+      dueIsRecurring: Boolean(t.dueIsRecurring),
       overdueDays: null,
       updatedAt: t.updatedAt ?? null,
     });

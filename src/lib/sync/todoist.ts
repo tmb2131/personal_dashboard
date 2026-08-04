@@ -3,6 +3,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
 import { parseDateOnlyLocal } from "@/lib/date-utils";
+import { parseTodoistDue, type TodoistDueLike } from "@/lib/todoist-due";
 
 let _api: TodoistApi | null = null;
 function api() {
@@ -16,7 +17,7 @@ type TodoistTask = {
   parentId?: string | null;
   content: string;
   description?: string | null;
-  due?: { date?: string; datetime?: string; string?: string; isRecurring?: boolean } | null;
+  due?: (TodoistDueLike & { string?: string; isRecurring?: boolean }) | null;
   deadline?: { date?: string } | null;
   priority: number;
   isCompleted?: boolean;
@@ -109,9 +110,7 @@ async function fetchAllTasks(): Promise<TodoistTask[]> {
 }
 
 function dueToDate(t: TodoistTask): Date | null {
-  if (t.due?.datetime) return new Date(t.due.datetime);
-  if (t.due?.date) return parseDateOnlyLocal(t.due.date);
-  return null;
+  return parseTodoistDue(t.due);
 }
 
 function deadlineToDate(t: TodoistTask): Date | null {

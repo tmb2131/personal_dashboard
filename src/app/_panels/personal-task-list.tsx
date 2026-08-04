@@ -90,7 +90,7 @@ export function PersonalTaskList({
               key={t.key}
               t={t}
               contextLabel={taskContext(t)}
-              showDueOnRight
+              dueDisplay="full"
               showUndoChip
               showCrossPost={false}
             />

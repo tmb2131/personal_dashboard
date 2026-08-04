@@ -9,6 +9,7 @@
 import { TodoistApi } from "@doist/todoist-api-typescript";
 import { and, eq, sql } from "drizzle-orm";
 import { formatDateOnlyLocal } from "@/lib/date-utils";
+import { todoistDueHasTime, type TodoistDueLike } from "@/lib/todoist-due";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 import {
@@ -119,11 +120,11 @@ const TODOIST_TASK_UPSERT_SET = {
   updatedAt: sql`excluded.updated_at`,
 } as const;
 
-/** Read `task.raw.due.datetime` to determine if the Todoist due carries a time component. */
+/** Read `task.raw.due` to determine if the Todoist due carries a time component. */
 function todoistDueIsDatetime(task: TodoistTask): boolean {
   if (!task.dueDate) return false;
-  const raw = task.raw as { due?: { datetime?: string | null } } | null;
-  return typeof raw?.due?.datetime === "string" && raw.due.datetime.length > 0;
+  const raw = task.raw as { due?: TodoistDueLike } | null;
+  return todoistDueHasTime(raw?.due);
 }
 
 async function refetchAndUpsertTodoistTask(api: TodoistApi, todoistTaskId: string) {

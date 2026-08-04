@@ -174,7 +174,12 @@ export function TaskList({
               </div>
               <ul>
                 {visibleOverdue.map((t) => (
-                  <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
+                  <TaskRow
+                    key={t.key}
+                    t={t}
+                    notionProjectPicklist={notionProjectPicklist}
+                    dueDisplay="time"
+                  />
                 ))}
               </ul>
               {visibleTasks.length > 0 && (
@@ -187,7 +192,12 @@ export function TaskList({
           {visibleTasks.length > 0 && (
             <ul>
               {visibleTasks.map((t) => (
-                <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
+                <TaskRow
+                  key={t.key}
+                  t={t}
+                  notionProjectPicklist={notionProjectPicklist}
+                  dueDisplay="time"
+                />
               ))}
             </ul>
           )}
@@ -228,7 +238,12 @@ export function TaskList({
       {showDone && visibleDone.length > 0 && (
         <ul>
           {visibleDone.map((t) => (
-            <TaskRow key={t.key} t={t} notionProjectPicklist={notionProjectPicklist} />
+            <TaskRow
+              key={t.key}
+              t={t}
+              notionProjectPicklist={notionProjectPicklist}
+              dueDisplay="time"
+            />
           ))}
         </ul>
       )}

@@ -1,4 +1,4 @@
-import { db, schema } from "@/lib/db";
+import { db, notionPageColumns, schema } from "@/lib/db";
 import { and, eq, isNull, notInArray } from "drizzle-orm";
 import { syncHash } from "./mappings";
 
@@ -11,7 +11,10 @@ function normalize(s: string) {
 // they're written via `writeProposedLinks`.
 export async function proposeLinks() {
   const [pages, tasks, existing] = await Promise.all([
-    db.select().from(schema.notionPages).where(eq(schema.notionPages.archived, false)),
+    db
+      .select(notionPageColumns)
+      .from(schema.notionPages)
+      .where(eq(schema.notionPages.archived, false)),
     db.select().from(schema.todoistTasks).where(eq(schema.todoistTasks.checked, false)),
     db.select().from(schema.taskLinks),
   ]);
@@ -70,7 +73,7 @@ export async function writeProposedLinks(
 ) {
   if (!pairs.length) return { written: 0 };
   const [pages, tasks] = await Promise.all([
-    db.select().from(schema.notionPages),
+    db.select(notionPageColumns).from(schema.notionPages),
     db.select().from(schema.todoistTasks),
   ]);
   const pageById = new Map(pages.map((p) => [p.id, p]));

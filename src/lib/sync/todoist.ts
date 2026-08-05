@@ -1,7 +1,6 @@
 import { TodoistApi } from "@doist/todoist-api-typescript";
-import type { InferSelectModel } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { parseDateOnlyLocal } from "@/lib/date-utils";
 import { parseTodoistDue, type TodoistDueLike } from "@/lib/todoist-due";
 
@@ -32,8 +31,6 @@ type TodoistProject = {
   color?: string;
   isArchived?: boolean;
 };
-
-type TodoistTaskRow = InferSelectModel<typeof schema.todoistTasks>;
 
 /** Todoist inbox project id (REST v2 marks inbox explicitly when present). */
 export async function getInboxProjectId(): Promise<string> {
@@ -137,29 +134,39 @@ export function mapTodoistTaskToRow(t: TodoistTask, updatedAt: Date) {
   };
 }
 
-function sameTime(a: Date | null, b: Date | null) {
-  return (a?.getTime() ?? null) === (b?.getTime() ?? null);
-}
-
-function sameLabels(a: string[], b: string[]) {
-  return a.length === b.length && a.every((label, i) => label === b[i]);
-}
-
-function todoistRowsMatch(existing: TodoistTaskRow, next: ReturnType<typeof mapTodoistTaskToRow>) {
-  return (
-    existing.projectId === next.projectId &&
-    existing.parentId === next.parentId &&
-    existing.content === next.content &&
-    existing.description === next.description &&
-    sameTime(existing.dueDate, next.dueDate) &&
-    existing.dueString === next.dueString &&
-    existing.dueIsRecurring === next.dueIsRecurring &&
-    sameTime(existing.deadline, next.deadline) &&
-    existing.priority === next.priority &&
-    existing.checked === next.checked &&
-    sameLabels(existing.labels ?? [], next.labels)
-  );
-}
+/**
+ * True when the incoming row differs from the stored one on any field the
+ * dashboard reads. Used as the `WHERE` on `ON CONFLICT DO UPDATE`, which makes
+ * Postgres skip untouched rows and report the rest via `RETURNING`.
+ *
+ * This replaced a `SELECT *` over the whole table that ran on every 30s poll.
+ * That read pulled the `raw` jsonb of every task purely to diff it in JS, and
+ * was burning the project's entire monthly Neon transfer allowance in days.
+ *
+ * Two consequences worth keeping in mind:
+ *
+ * - `IS DISTINCT FROM`, not `<>`: most of these columns are nullable, and `<>`
+ *   yields NULL (falsy) when either side is NULL, so a value being cleared
+ *   upstream would not register as a change.
+ * - `raw` is deliberately absent. Todoist's payload carries fields that differ
+ *   on every poll, so including it would mark every row changed and undo the
+ *   whole point. The `raw` subtrees anything actually reads (`raw.due`,
+ *   `raw.deadline`) are shadowed by the scalar columns compared here, so a
+ *   change that matters still lands.
+ */
+const todoistTaskFieldsDiffer = sql`
+  ${schema.todoistTasks.projectId} IS DISTINCT FROM excluded.project_id
+  OR ${schema.todoistTasks.parentId} IS DISTINCT FROM excluded.parent_id
+  OR ${schema.todoistTasks.content} IS DISTINCT FROM excluded.content
+  OR ${schema.todoistTasks.description} IS DISTINCT FROM excluded.description
+  OR ${schema.todoistTasks.dueDate} IS DISTINCT FROM excluded.due_date
+  OR ${schema.todoistTasks.dueString} IS DISTINCT FROM excluded.due_string
+  OR ${schema.todoistTasks.dueIsRecurring} IS DISTINCT FROM excluded.due_is_recurring
+  OR ${schema.todoistTasks.deadline} IS DISTINCT FROM excluded.deadline
+  OR ${schema.todoistTasks.priority} IS DISTINCT FROM excluded.priority
+  OR ${schema.todoistTasks.checked} IS DISTINCT FROM excluded.checked
+  OR ${schema.todoistTasks.labels} IS DISTINCT FROM excluded.labels
+`;
 
 export type SyncTodoistResult = {
   projects: number;
@@ -172,9 +179,6 @@ export type SyncTodoistResult = {
 export async function syncTodoist(): Promise<SyncTodoistResult> {
   const [projects, tasks] = await Promise.all([fetchAllProjects(), fetchAllTasks()]);
   const now = new Date();
-  const existingTasks = await db.select().from(schema.todoistTasks);
-  const existingTaskById = new Map(existingTasks.map((t) => [t.id, t]));
-  const activeTaskIds = new Set(tasks.map((t) => t.id));
   const changedTaskIds: string[] = [];
   const completedTaskIds: string[] = [];
   const completedRecurringTaskIds: string[] = [];
@@ -207,20 +211,14 @@ export async function syncTodoist(): Promise<SyncTodoistResult> {
   }
 
   const taskRows = tasks.map((t) => mapTodoistTaskToRow(t, now));
-  for (const row of taskRows) {
-    const existing = existingTaskById.get(row.id);
-    if (!existing || !todoistRowsMatch(existing, row)) {
-      changedTaskIds.push(row.id);
-    } else {
-      // Unchanged row: keep its updatedAt. Reconcile tie-breaks conflicts by the
-      // newer-side-wins rule, so updatedAt must approximate when the task last
-      // changed, not when it was last polled.
-      row.updatedAt = existing.updatedAt;
-    }
-  }
 
   if (taskRows.length) {
-    await db
+    // `RETURNING` yields inserted rows plus rows the `setWhere` let through, and
+    // nothing else — so these ids *are* the changed set. Unchanged rows are never
+    // written, which also preserves their `updatedAt`: reconcile tie-breaks
+    // conflicts by newer-side-wins, so that column must approximate when the task
+    // last changed rather than when it was last polled.
+    const changed = await db
       .insert(schema.todoistTasks)
       .values(taskRows)
       .onConflictDoUpdate({
@@ -240,17 +238,38 @@ export async function syncTodoist(): Promise<SyncTodoistResult> {
           raw: sql`excluded.raw`,
           updatedAt: sql`excluded.updated_at`,
         },
-      });
+        setWhere: todoistTaskFieldsDiffer,
+      })
+      .returning({ id: schema.todoistTasks.id });
+
+    changedTaskIds.push(...changed.map((row) => row.id));
   }
 
-  for (const task of existingTasks) {
-    if (task.checked || activeTaskIds.has(task.id)) continue;
-    await db
+  // Anything still open locally that the API no longer lists has been completed.
+  // Guarded on a non-empty response: an API hiccup returning zero tasks would
+  // otherwise mark the entire table complete and mirror that to Notion.
+  if (tasks.length) {
+    const completed = await db
       .update(schema.todoistTasks)
       .set({ checked: true, updatedAt: now })
-      .where(eq(schema.todoistTasks.id, task.id));
-    completedTaskIds.push(task.id);
-    if (task.dueIsRecurring) completedRecurringTaskIds.push(task.id);
+      .where(
+        and(
+          eq(schema.todoistTasks.checked, false),
+          notInArray(
+            schema.todoistTasks.id,
+            tasks.map((t) => t.id),
+          ),
+        ),
+      )
+      .returning({
+        id: schema.todoistTasks.id,
+        dueIsRecurring: schema.todoistTasks.dueIsRecurring,
+      });
+
+    for (const row of completed) {
+      completedTaskIds.push(row.id);
+      if (row.dueIsRecurring) completedRecurringTaskIds.push(row.id);
+    }
   }
 
   await db

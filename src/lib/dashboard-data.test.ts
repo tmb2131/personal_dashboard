@@ -57,6 +57,10 @@ vi.mock("@/lib/db", () => {
       todoistProjects: table("todoistProjects"),
       syncState: table("syncState"),
     },
+    // Column projections that drop `raw`. The fake `select()` ignores its
+    // argument and keys off the `from()` table, so these only need to exist.
+    notionPageColumns: {},
+    notionCategoryColumns: {},
   };
 });
 

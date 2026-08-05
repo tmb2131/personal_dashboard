@@ -1,4 +1,4 @@
-import { db, schema } from "@/lib/db";
+import { db, notionCategoryColumns, notionPageColumns, schema } from "@/lib/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
@@ -12,8 +12,10 @@ import {
 import { getNotionDataVersion } from "@/lib/sync/data-version";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
-export type NotionPage = InferSelectModel<typeof schema.notionPages>;
-export type NotionCategory = InferSelectModel<typeof schema.notionCategories>;
+// `raw` is excluded: it is never read, and fetching it on every render was the
+// bulk of this project's Neon transfer. See `notionPageColumns` in lib/db.
+export type NotionPage = Omit<InferSelectModel<typeof schema.notionPages>, "raw">;
+export type NotionCategory = Omit<InferSelectModel<typeof schema.notionCategories>, "raw">;
 export type TodoistTask = InferSelectModel<typeof schema.todoistTasks>;
 export type TodoistProject = InferSelectModel<typeof schema.todoistProjects>;
 export type TaskLink = InferSelectModel<typeof schema.taskLinks>;
@@ -333,8 +335,11 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       .from(schema.gcalEvents)
       .where(and(gte(schema.gcalEvents.start, todayStart), lte(schema.gcalEvents.start, horizon)))
       .orderBy(asc(schema.gcalEvents.start)),
-    db.select().from(schema.notionPages).where(eq(schema.notionPages.archived, false)),
-    db.select().from(schema.notionCategories),
+    db
+      .select(notionPageColumns)
+      .from(schema.notionPages)
+      .where(eq(schema.notionPages.archived, false)),
+    db.select(notionCategoryColumns).from(schema.notionCategories),
     db.select().from(schema.todoistTasks),
     db.select().from(schema.taskLinks),
     db.select().from(schema.todoistProjects),

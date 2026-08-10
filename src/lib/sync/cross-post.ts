@@ -8,7 +8,7 @@ import {
   mirrorNotionFromTodoist,
   mirrorTodoistFromNotion,
 } from "@/lib/sync/orchestrator";
-import { getPersonalProjectId, syncTodoistTasksByIds } from "@/lib/sync/todoist";
+import { getInboxProjectId, syncTodoistTasksByIds } from "@/lib/sync/todoist";
 
 function todoistApi() {
   const token = process.env.TODOIST_TOKEN;
@@ -70,7 +70,7 @@ export async function pushNotionPageToTodoist(
   }
   if (p.status === "Done") throw new Error("Done tasks are not pushed to Todoist");
 
-  const projectId = options?.todoistProjectId ?? (await getPersonalProjectId());
+  const projectId = options?.todoistProjectId ?? (await getInboxProjectId());
 
   const api = todoistApi();
   const args: Record<string, unknown> = {

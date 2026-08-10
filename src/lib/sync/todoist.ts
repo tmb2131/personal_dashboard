@@ -32,15 +32,29 @@ type TodoistProject = {
   isArchived?: boolean;
 };
 
-/** Todoist inbox project id (REST v2 marks inbox explicitly when present). */
+/**
+ * Todoist inbox project id — the default destination for anything the dashboard
+ * creates without a project of its own. The inbox flag is spelled differently
+ * across API/SDK versions, so accept all three and fall back to the name.
+ */
 export async function getInboxProjectId(): Promise<string> {
-  type Proj = TodoistProject & { inbox_project?: boolean };
+  type Proj = TodoistProject & {
+    inbox_project?: boolean;
+    inboxProject?: boolean;
+    is_inbox_project?: boolean;
+    isInboxProject?: boolean;
+  };
   const result = (await (api() as unknown as {
     getProjects: () => Promise<Proj[] | { results: Proj[] }>;
   }).getProjects()) as Proj[] | { results: Proj[] };
   const list = Array.isArray(result) ? result : result.results;
   const inbox = list.find(
-    (p) => (p as Proj).inbox_project === true || (p.name ?? "").toLowerCase() === "inbox",
+    (p) =>
+      p.inbox_project === true ||
+      p.inboxProject === true ||
+      p.is_inbox_project === true ||
+      p.isInboxProject === true ||
+      (p.name ?? "").trim().toLowerCase() === "inbox",
   );
   if (!inbox) throw new Error("Todoist inbox project not found");
   return inbox.id;
@@ -56,11 +70,6 @@ export async function getTodoistProjectIdByName(name: string): Promise<string> {
   const match = list.find((p) => (p.name ?? "").trim().toLowerCase() === want);
   if (!match) throw new Error(`Todoist project named "${name.trim()}" not found`);
   return match.id;
-}
-
-/** Todoist project whose name is exactly `Personal` (case-insensitive). */
-export async function getPersonalProjectId(): Promise<string> {
-  return getTodoistProjectIdByName("Personal");
 }
 
 async function fetchAllProjects(): Promise<TodoistProject[]> {

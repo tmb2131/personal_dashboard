@@ -35,12 +35,12 @@ import {
   updateNotionTodoStatus,
 } from "@/lib/sync/notion";
 import { reconcileAllLinks, type ReconcileSummary } from "@/lib/sync/reconcile";
-import { getPersonalProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
+import { getInboxProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
 
 export type QuickAddResult =
   | { ok: true; summary?: string; warning?: string }
   | { ok: false; error: string };
-const DEFAULT_QUICK_ADD_PROJECT = "Personal";
+const DEFAULT_QUICK_ADD_PROJECT = "Inbox";
 
 function quickAddIdempotencyKey(args: {
   text: string;
@@ -107,7 +107,7 @@ export async function quickAddAction(
   }).getProjects()) as { id: string; name: string }[] | { results: { id: string; name: string }[] };
   const list = Array.isArray(projects) ? projects : projects.results;
   const match = list.find((p) => p.name.toLowerCase() === targetProjectName.toLowerCase());
-  const projectId = selectedNotionProjectId ? (match?.id ?? (await getPersonalProjectId())) : match?.id;
+  const projectId = selectedNotionProjectId ? (match?.id ?? (await getInboxProjectId())) : match?.id;
 
   // A typed @mention that matches no Todoist project silently lands the task in
   // Inbox. Still create it — losing the capture is worse — but say where it went.
@@ -832,7 +832,7 @@ export async function createProjectSubtaskAction(args: {
     }).getProjects()) as { id: string; name: string }[] | { results: { id: string; name: string }[] };
     const list = Array.isArray(projects) ? projects : projects.results;
     const notionProject = list.find((p) => p.name.toLowerCase() === "notion");
-    const projectId = notionProject?.id ?? (await getPersonalProjectId());
+    const projectId = notionProject?.id ?? (await getInboxProjectId());
 
     const basePayload = {
       content: args.title.trim(),

@@ -101,6 +101,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
             <PersonalTaskList
               tasks={data.personalTasks}
               next7DaysTasks={data.next7DaysTasks}
+              defaultView="next7Days"
             />
           </View>
         </View>

@@ -12,22 +12,39 @@ type ReconcileToast = {
 };
 
 function summarize(r: Extract<ReconcileResult, { ok: true }>): ReconcileToast {
-  const wrote = r.mirroredToTodoist + r.mirroredToNotion + r.closedArchived;
-  const hasErrors = r.errors.length > 0;
-  if (hasErrors) {
+  const wrote =
+    r.mirroredToTodoist + r.mirroredToNotion + r.closedArchived + r.backfill.created;
+  const errorCount = r.errors.length + r.backfill.errors.length + (r.backfill.error ? 1 : 0);
+
+  // The backfill works through a capped batch per run and holds back anything an
+  // unlinked Todoist task looks to cover already. Both have to be said out loud:
+  // otherwise "in sync" reads as "your Notion task reached Todoist" when it didn't.
+  const notes: string[] = [];
+  if (r.backfill.remaining) notes.push(`${r.backfill.remaining} left — run again.`);
+  if (r.backfill.skippedTitleMatch) {
+    notes.push(`${r.backfill.skippedTitleMatch} skipped: same title already in Todoist.`);
+  }
+  if (r.backfill.error) notes.push(`Backfill: ${r.backfill.error}.`);
+  const suffix = notes.length ? ` ${notes.join(" ")}` : "";
+
+  if (errorCount) {
     return {
       kind: "warning",
-      message: `Reconcile: ${wrote} fixed, ${r.errors.length} error${r.errors.length === 1 ? "" : "s"}.`,
+      message: `Reconcile: ${wrote} fixed, ${errorCount} error${errorCount === 1 ? "" : "s"}.${suffix}`,
     };
   }
   if (wrote === 0) {
-    return { kind: "success", message: `Reconcile: ${r.scanned} pair${r.scanned === 1 ? "" : "s"} in sync.` };
+    return {
+      kind: "success",
+      message: `Reconcile: ${r.scanned} pair${r.scanned === 1 ? "" : "s"} in sync.${suffix}`,
+    };
   }
   const parts: string[] = [];
+  if (r.backfill.created) parts.push(`${r.backfill.created} added to Todoist`);
   if (r.mirroredToTodoist) parts.push(`${r.mirroredToTodoist} → Todoist`);
   if (r.mirroredToNotion) parts.push(`${r.mirroredToNotion} → Notion`);
   if (r.closedArchived) parts.push(`${r.closedArchived} closed`);
-  return { kind: "success", message: `Reconcile: ${parts.join(", ")}.` };
+  return { kind: "success", message: `Reconcile: ${parts.join(", ")}.${suffix}` };
 }
 
 export function ReconcileButton({ className }: { className?: string }) {

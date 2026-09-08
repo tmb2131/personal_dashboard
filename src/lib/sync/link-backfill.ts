@@ -1,10 +1,6 @@
 import { db, notionPageColumns, schema } from "@/lib/db";
-import { and, eq, isNull, notInArray } from "drizzle-orm";
-import { syncHash } from "./mappings";
-
-function normalize(s: string) {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
-}
+import { eq } from "drizzle-orm";
+import { normalizeTitleForMatch as normalize, syncHash } from "./mappings";
 
 // Returns proposed title-match links between Notion pages and Todoist tasks
 // that aren't already linked. The caller (a UI screen) approves them before
@@ -111,21 +107,4 @@ export async function writeProposedLinks(
   if (!rows.length) return { written: 0 };
   await db.insert(schema.taskLinks).values(rows).onConflictDoNothing();
   return { written: rows.length };
-}
-
-// Helper to find Notion pages without a Todoist mirror that should have one,
-// per the propagation rules in mappings.ts. The actual creation runs in M3.
-export async function listMissingMirrors() {
-  const linked = await db.select({ id: schema.taskLinks.notionPageId }).from(schema.taskLinks);
-  const linkedIds = linked.map((l) => l.id);
-  return db
-    .select()
-    .from(schema.notionPages)
-    .where(
-      and(
-        eq(schema.notionPages.archived, false),
-        eq(schema.notionPages.ignore, false),
-        linkedIds.length ? notInArray(schema.notionPages.id, linkedIds) : isNull(schema.notionPages.id),
-      ),
-    );
 }

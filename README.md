@@ -19,6 +19,7 @@ The plan and architecture decisions live in [`/Users/tombrosens/.claude/plans/i-
 - Google Calendar sync (Tom + Sriya, 14-day rolling window) → Postgres; optional **incremental sync** via stored `syncToken`, **push watches** + `/api/webhooks/gcal`, and **self-healing watch renewal** from webhook/manual sync traffic (no cron required).
 - Todoist sync (tasks + projects) → Postgres (full + targeted task upserts for webhooks).
 - Linking model: `task_links` and `category_project_links` tables, plus a heuristic title-match backfill.
+- **Reconcile** (daily cron, or the dashboard button) runs two passes: re-hash every `task_links` pair and re-mirror whatever drifted, then create the Todoist side of Notion sub-tasks that never had one. The second pass is the only automatic Notion → Todoist *create* — every other path is link-aware and skips a task with no link yet. New tasks land in the Todoist project named **Notion** (the inbox if there is no such project), capped per run; the toast says how many are left.
 - **M3 — Orchestrator:** link-aware mirroring (`lib/sync/orchestrator.ts`), `audit_log`, recurring Todoist instance repair when links bump to a new task id.
 - **M4 — Writes:** dashboard task checkbox calls Notion + Todoist APIs and updates `task_links` / local cache (`applyDashboardToggle`).
 - **M6:** webhook payload size limits + structured `audit_log`; installable PWA manifest (`src/app/manifest.ts` + `public/icon.svg`); backups documented below.
@@ -168,6 +169,8 @@ src/
       audit.ts               — append-only audit_log writer
       mappings.ts            — Notion ↔ Todoist field translation (single source of truth)
       link-backfill.ts       — heuristic title-match linker
+      reconcile.ts           — drift scan over task_links, then the missing-mirror pass
+      mirror-backfill.ts     — creates the Todoist side of never-mirrored Notion sub-tasks
     dashboard-data.ts        — server-side data composition for the page
     utils.ts                 — cn(), date helpers
   proxy.ts                   — auth gate (was middleware.ts; renamed for Next 16)

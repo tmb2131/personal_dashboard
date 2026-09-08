@@ -6,32 +6,25 @@
  * sending 200, which Vercel can terminate when a function instance shuts down. A webhook
  * can be acknowledged but never applied. Reconciliation catches that drift on a daily
  * cadence (cron) or on demand (manual button).
+ *
+ * A second pass, `createMissingTodoistMirrors`, then covers what a link scan
+ * structurally cannot see: a Notion task with no Todoist counterpart at all, and
+ * so with no `task_links` row to scan.
  */
 
 import { eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
+import { mapBoundedConcurrent } from "@/lib/sync/concurrency";
+import {
+  createMissingTodoistMirrors,
+  type MirrorBackfillSummary,
+} from "@/lib/sync/mirror-backfill";
 import { hashForPair, mirrorNotionFromTodoist, mirrorTodoistFromNotion } from "@/lib/sync/orchestrator";
 import type { NotionPage, TodoistTask } from "@/lib/sync/mappings";
 
 const STALE_PENDING_MS = 10 * 60 * 1000;
 const RECONCILE_CONCURRENCY = 5;
-
-async function mapBoundedConcurrent<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
-      const idx = i++;
-      if (idx >= items.length) return;
-      await fn(items[idx]);
-    }
-  });
-  await Promise.all(workers);
-}
 
 export type ReconcileSummary = {
   scanned: number;
@@ -42,10 +35,27 @@ export type ReconcileSummary = {
   staleCleared: number;
   missingRows: number;
   errors: { linkId: string; error: string }[];
+  /** Second pass: Notion tasks that had no Todoist counterpart to scan. */
+  backfill: MirrorBackfillSummary;
 };
 
 export async function reconcileAllLinks(): Promise<ReconcileSummary> {
-  const summary: ReconcileSummary = {
+  // Drift first: it repairs pairs that already exist, and shouldn't have to share
+  // the function's time budget with task creation to do it.
+  const drift = await scanTaskLinks();
+  const summary: ReconcileSummary = { ...drift, backfill: await createMissingTodoistMirrors() };
+
+  await logAudit({
+    source: "reconcile",
+    op: "reconcile_run",
+    payload: summary as unknown as Record<string, unknown>,
+  });
+
+  return summary;
+}
+
+async function scanTaskLinks(): Promise<Omit<ReconcileSummary, "backfill">> {
+  const summary: Omit<ReconcileSummary, "backfill"> = {
     scanned: 0,
     inSync: 0,
     mirroredToTodoist: 0,
@@ -58,14 +68,7 @@ export async function reconcileAllLinks(): Promise<ReconcileSummary> {
 
   const links = await db.select().from(schema.taskLinks);
   const now = Date.now();
-  if (!links.length) {
-    await logAudit({
-      source: "reconcile",
-      op: "reconcile_run",
-      payload: summary as unknown as Record<string, unknown>,
-    });
-    return summary;
-  }
+  if (!links.length) return summary;
 
   // Batch-load both sides into Maps to avoid N+1 SELECTs in the loop.
   const notionPageIds = [...new Set(links.map((l) => l.notionPageId))];
@@ -158,12 +161,6 @@ export async function reconcileAllLinks(): Promise<ReconcileSummary> {
         error: msg,
       });
     }
-  });
-
-  await logAudit({
-    source: "reconcile",
-    op: "reconcile_run",
-    payload: summary as unknown as Record<string, unknown>,
   });
 
   return summary;

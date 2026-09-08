@@ -25,7 +25,23 @@ export const PRIORITY_TODOIST_TO_NOTION: Record<number, NotionPage["priority"]> 
 
 export const IN_PROGRESS_LABEL = "in-progress";
 
-export function notionShouldMirrorToTodoist(p: NotionPage): boolean {
+/**
+ * Title key used to decide whether two rows are talking about the same task.
+ * A heuristic, never a substitute for `task_links` — it backs the link
+ * proposals in `link-backfill.ts` and the duplicate guard in
+ * `mirror-backfill.ts`, both of which treat a match as a reason to ask or to
+ * hold off rather than as a link.
+ */
+export function normalizeTitleForMatch(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Takes any row shaped like a Notion page rather than the full model, so bulk
+ * callers can read through `notionPageColumns` and leave the fat `raw` column
+ * on the server.
+ */
+export function notionShouldMirrorToTodoist(p: Omit<NotionPage, "raw">): boolean {
   if (p.archived || p.ignore) return false;
   if (p.status === "Done") return false;
   return Boolean(p.dateStart || p.deadline || p.focus === "Yes" || p.parentId);

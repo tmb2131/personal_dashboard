@@ -1,30 +1,58 @@
 /**
- * Drift-safety pass: scan every `task_links` row, recompute the pair's hash,
- * and run the appropriate mirror if it diverged from `lastSyncHash`.
+ * Reconcile: bring Notion and Todoist to the same state, in four passes.
  *
- * Why this exists: webhook handlers do their work in `Promise.resolve().then(...)` *after*
- * sending 200, which Vercel can terminate when a function instance shuts down. A webhook
- * can be acknowledged but never applied. Reconciliation catches that drift on a daily
- * cadence (cron) or on demand (manual button).
+ * Historically this file was only the drift scan — walk every `task_links` row,
+ * recompute the pair's hash, mirror whichever side moved. That pass exists
+ * because webhook handlers do their work in `Promise.resolve().then(...)`
+ * *after* sending 200, which Vercel can terminate when a function instance
+ * shuts down; a webhook can be acknowledged but never applied, and the only
+ * place to notice is here, on a daily cron or on demand from the button.
  *
- * A second pass, `createMissingTodoistMirrors`, then covers what a link scan
- * structurally cannot see: a Notion task with no Todoist counterpart at all, and
- * so with no `task_links` row to scan.
+ * A link scan structurally cannot see a task that has no link — which is every
+ * task typed into one app and never carried to the other. Three more passes
+ * cover that, and together they are what makes the button's promise true:
+ *
+ *   1. `adoptExactTitleMatches` — link the rows that were plainly already
+ *      pairs, so the create passes below don't make a second copy of them.
+ *   2. the drift scan — repair the pairs that exist, adopted ones included.
+ *   3. `createMissingTodoistMirrors` — Notion sub-tasks with no Todoist side.
+ *   4. `createMissingNotionMirrors` — Todoist tasks with no Notion side.
+ *
+ * All four read the cached copies in Postgres, so the run starts by refreshing
+ * that cache from both APIs. Without it "everything matches" would only ever
+ * mean "everything matched whenever the last webhook landed".
  */
 
 import { eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 import { mapBoundedConcurrent } from "@/lib/sync/concurrency";
+import { adoptExactTitleMatches, type LinkAdoptionSummary } from "@/lib/sync/link-adoption";
 import {
   createMissingTodoistMirrors,
   type MirrorBackfillSummary,
 } from "@/lib/sync/mirror-backfill";
+import {
+  createMissingNotionMirrors,
+  type NotionBackfillSummary,
+} from "@/lib/sync/notion-backfill";
+import { syncNotion } from "@/lib/sync/notion";
 import { hashForPair, mirrorNotionFromTodoist, mirrorTodoistFromNotion } from "@/lib/sync/orchestrator";
+import { syncTodoist } from "@/lib/sync/todoist";
+import { reconcileTodoistSyncResult } from "@/lib/sync/todoist-reconcile";
 import type { NotionPage, TodoistTask } from "@/lib/sync/mappings";
 
 const STALE_PENDING_MS = 10 * 60 * 1000;
 const RECONCILE_CONCURRENCY = 5;
+
+export type RefreshSummary = {
+  notionError: string | null;
+  todoistError: string | null;
+  /** Todoist-side changes the pull observed and mirrored into Notion. */
+  mirroredFromTodoist: number;
+  /** Recurring links repointed at the next open instance. */
+  recurringRepaired: number;
+};
 
 export type ReconcileSummary = {
   scanned: number;
@@ -35,15 +63,35 @@ export type ReconcileSummary = {
   staleCleared: number;
   missingRows: number;
   errors: { linkId: string; error: string }[];
-  /** Second pass: Notion tasks that had no Todoist counterpart to scan. */
+  /** Pull of both sources that the four passes then compare. */
+  refresh: RefreshSummary;
+  /** Unlinked rows on both sides that were plainly the same task. */
+  adopted: LinkAdoptionSummary;
+  /** Notion tasks that had no Todoist counterpart to scan. */
   backfill: MirrorBackfillSummary;
+  /** Todoist tasks that had no Notion counterpart to scan. */
+  notionBackfill: NotionBackfillSummary;
 };
 
 export async function reconcileAllLinks(): Promise<ReconcileSummary> {
-  // Drift first: it repairs pairs that already exist, and shouldn't have to share
-  // the function's time budget with task creation to do it.
+  const refresh = await refreshBothSources();
+
+  // Adoption first, and it is cheap — no API calls, just `task_links` rows for
+  // pairs that already exist in both apps. Doing it here means the drift scan
+  // repairs them in the same run and neither create pass duplicates them.
+  const adopted = await adoptExactTitleMatches();
+
+  // Then drift: repairing pairs that already exist shouldn't have to share the
+  // function's time budget with task creation.
   const drift = await scanTaskLinks();
-  const summary: ReconcileSummary = { ...drift, backfill: await createMissingTodoistMirrors() };
+
+  const summary: ReconcileSummary = {
+    ...drift,
+    refresh,
+    adopted,
+    backfill: await createMissingTodoistMirrors(),
+    notionBackfill: await createMissingNotionMirrors(),
+  };
 
   await logAudit({
     source: "reconcile",
@@ -54,8 +102,62 @@ export async function reconcileAllLinks(): Promise<ReconcileSummary> {
   return summary;
 }
 
-async function scanTaskLinks(): Promise<Omit<ReconcileSummary, "backfill">> {
-  const summary: Omit<ReconcileSummary, "backfill"> = {
+/**
+ * Pull both sources into the cache before comparing them.
+ *
+ * A failure on one side is reported, not thrown: reconciling against a cache
+ * that is a few minutes stale still repairs plenty, and refusing to run at all
+ * because Notion returned a 502 would make the button useless exactly when
+ * something is already wrong. The mirroring passes hit the live APIs anyway, so
+ * a write against a stale row still fails loudly rather than silently landing.
+ *
+ * The Todoist result has to be handed to `reconcileTodoistSyncResult`, the same
+ * way `/api/sync/run` does, and it is not optional here. `syncTodoist` reports
+ * a change exactly once — the upsert's `RETURNING` is what names the changed
+ * rows, so the next pull sees nothing to report. Dropping the result would
+ * therefore *consume* a completed recurring task's signal: the drift scan finds
+ * the old id gone from Todoist and counts a missing row, and the link is never
+ * repointed at the new instance.
+ */
+async function refreshBothSources(): Promise<RefreshSummary> {
+  const [notion, todoist] = await Promise.allSettled([syncNotion(), syncTodoist()]);
+
+  const refresh: RefreshSummary = {
+    notionError: notion.status === "rejected" ? errorMessage(notion.reason) : null,
+    todoistError: todoist.status === "rejected" ? errorMessage(todoist.reason) : null,
+    mirroredFromTodoist: 0,
+    recurringRepaired: 0,
+  };
+
+  if (todoist.status === "fulfilled") {
+    const applied = await reconcileTodoistSyncResult(todoist.value, "reconcile-refresh");
+    refresh.mirroredFromTodoist = applied.mirrored;
+    refresh.recurringRepaired = applied.repaired;
+  }
+
+  if (refresh.notionError || refresh.todoistError) {
+    await logAudit({
+      source: "reconcile",
+      op: "reconcile_refresh_error",
+      payload: refresh as unknown as Record<string, unknown>,
+      error: refresh.notionError ?? refresh.todoistError,
+    });
+  }
+
+  return refresh;
+}
+
+function errorMessage(reason: unknown): string {
+  return String((reason as Error)?.message ?? reason);
+}
+
+type DriftSummary = Omit<
+  ReconcileSummary,
+  "refresh" | "adopted" | "backfill" | "notionBackfill"
+>;
+
+async function scanTaskLinks(): Promise<DriftSummary> {
+  const summary: DriftSummary = {
     scanned: 0,
     inSync: 0,
     mirroredToTodoist: 0,

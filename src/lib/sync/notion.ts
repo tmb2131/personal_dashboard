@@ -2,6 +2,7 @@ import { Client } from "@notionhq/client";
 import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
 import { parseDateOnlyLocalStrict, parseDateTimeLocal } from "@/lib/date-utils";
+import { todoistDueHasTime, type TodoistDueLike } from "@/lib/todoist-due";
 import {
   notionStatusFromTodoist,
   PRIORITY_TODOIST_TO_NOTION,
@@ -521,14 +522,32 @@ export async function createNotionProject(input: {
     properties.Date = { date: formatNotionDateProp(start, false, end) };
   }
 
-  const created = await client().pages.create({
-    parent: { type: "data_source_id", data_source_id: TODOS_DS },
-    properties: properties as never,
-  });
-
-  const pageId = created.id;
+  const pageId = await createTodosPage(properties);
   await syncNotionEntitiesByIds([pageId], new Map([[pageId, "todo"]]));
   return { pageId };
+}
+
+/**
+ * One `pages.create` against the To-Dos data source, shared by every creator in
+ * this file.
+ *
+ * The catch is the point: `properties` is keyed by the memoized title property
+ * name, so a database whose title column was renamed since the last cold start
+ * would fail here and go on failing for the life of the warm instance. Dropping
+ * the memo costs one extra read on the next attempt and nothing else.
+ */
+async function createTodosPage(properties: Record<string, unknown>): Promise<string> {
+  if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
+  try {
+    const created = await client().pages.create({
+      parent: { type: "data_source_id", data_source_id: TODOS_DS },
+      properties: properties as never,
+    });
+    return created.id;
+  } catch (e) {
+    _todosTitleKey = null;
+    throw e;
+  }
 }
 
 function parseDateOnlyInput(input: string): Date {
@@ -566,16 +585,28 @@ function formatRichTextProp(text: string | null): { rich_text: { type: "text"; t
 }
 
 /**
+ * Memoized because it is a schema fact, not a row: a data source's title
+ * property is renamed about as often as the database is rebuilt, and the
+ * backfill would otherwise spend one `dataSources.retrieve` per page it
+ * creates — a third of a small Notion rate budget on a constant.
+ */
+let _todosTitleKey: string | null = null;
+
+/**
  * Resolves the To-Dos data source title property key (e.g. "Task name") for pages.create.
  */
 export async function getTodosTitlePropertyName(): Promise<string> {
+  if (_todosTitleKey) return _todosTitleKey;
   if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
   const c = client() as unknown as {
     dataSources: { retrieve: (args: { data_source_id: string }) => Promise<DataSourceObjectResponse> };
   };
   const ds = await c.dataSources.retrieve({ data_source_id: TODOS_DS });
   for (const [key, cfg] of Object.entries(ds.properties ?? {})) {
-    if (cfg && typeof cfg === "object" && "type" in cfg && cfg.type === "title") return key;
+    if (cfg && typeof cfg === "object" && "type" in cfg && cfg.type === "title") {
+      _todosTitleKey = key;
+      return key;
+    }
   }
   throw new Error("To-Dos data source has no title property");
 }
@@ -583,8 +614,15 @@ export async function getTodosTitlePropertyName(): Promise<string> {
 export type CreateTodoFromTodoistMirrorInput = {
   title: string;
   notionParentPageId: string;
-  /** Todoist-side task (DB row) used for Status / priority / dates on the new Notion page. */
-  task: Pick<TodoistTask, "checked" | "labels" | "priority" | "dueDate" | "deadline" | "description">;
+  /**
+   * Todoist-side task (DB row) used for Status / priority / dates on the new
+   * Notion page. `raw` is in the pick because it is the only place the due's
+   * time of day survives — see `todoistDueHasTime`.
+   */
+  task: Pick<
+    TodoistTask,
+    "checked" | "labels" | "priority" | "dueDate" | "deadline" | "description" | "raw"
+  >;
 };
 
 export async function createNotionProjectSubtask(input: {
@@ -619,12 +657,7 @@ export async function createNotionProjectSubtask(input: {
     properties.Priority = { select: { name: input.priority } };
   }
 
-  const created = await client().pages.create({
-    parent: { type: "data_source_id", data_source_id: TODOS_DS },
-    properties: properties as never,
-  });
-
-  const pageId = created.id;
+  const pageId = await createTodosPage(properties);
   await syncNotionEntitiesByIds([pageId], new Map([[pageId, "todo"]]));
   return { pageId };
 }
@@ -687,6 +720,30 @@ export async function updateNotionTaskParent(
 }
 
 /**
+ * Creates a top-level To-Dos row — a *project*, in dashboard terms, since it
+ * has no "Parent task".
+ *
+ * Only the Todoist → Notion backfill uses this, and only to stand up the Inbox
+ * project when the workspace has none. Every mirrored task needs a parent to
+ * hang from, and failing the whole pass over a missing landing pad is worse
+ * than creating one row named exactly what the user would have named it.
+ */
+export async function createNotionTopLevelTodo(title: string): Promise<{ pageId: string }> {
+  if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN missing");
+  if (!TODOS_DS) throw new Error("NOTION_TODOS_DATA_SOURCE_ID missing");
+  const name = title.trim();
+  if (!name) throw new Error("Project title is required");
+
+  const titleKey = await getTodosTitlePropertyName();
+  const pageId = await createTodosPage({
+    [titleKey]: { title: [{ type: "text" as const, text: { content: name } }] },
+    Status: { status: { name: "Not started" } },
+  });
+  await syncNotionEntitiesByIds([pageId], new Map([[pageId, "todo"]]));
+  return { pageId };
+}
+
+/**
  * Creates a sub-task page under the To-Dos data source with "Parent task" set.
  * Caller must validate the parent is a top-level project row; syncs the new page into `notion_pages`.
  */
@@ -735,8 +792,14 @@ export async function createTodoPageFromTodoistMirror(
   const due = input.task.dueDate;
   const dl = input.task.deadline;
   if (due) {
+    // A timed Todoist due has to reach Notion as a datetime. Writing it
+    // date-only used to bake the disagreement in permanently: the link row
+    // records whatever the two sides look like the moment it is created, so
+    // "7pm here, midnight there" became the in-sync hash and the drift scan
+    // never had a reason to look again.
+    const raw = input.task.raw as { due?: TodoistDueLike } | null;
     properties.Date = {
-      date: formatNotionDateProp(due, false),
+      date: formatNotionDateProp(due, todoistDueHasTime(raw?.due)),
     };
   }
   if (dl && (!due || dl.getTime() !== due.getTime())) {
@@ -745,12 +808,7 @@ export async function createTodoPageFromTodoistMirror(
     };
   }
 
-  const created = await client().pages.create({
-    parent: { type: "data_source_id", data_source_id: TODOS_DS },
-    properties: properties as never,
-  });
-
-  const pageId = created.id;
+  const pageId = await createTodosPage(properties);
   await syncNotionEntitiesByIds([pageId], new Map([[pageId, "todo"]]));
   return { pageId };
 }

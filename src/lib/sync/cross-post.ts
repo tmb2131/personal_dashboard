@@ -100,6 +100,29 @@ export async function pushNotionPageToTodoist(
   await mirrorTodoistFromNotion(notionPageId);
 }
 
+/**
+ * Create the Notion side of a Todoist task and link the pair.
+ *
+ * Shared by the per-row "Add to Notion" action and the reconcile backfill. The
+ * caller owns the destination: this does no validating of its own, because the
+ * two callers establish the parent differently — one is handed a page id by the
+ * user, the other resolves one from the cached project rows.
+ */
+export async function createNotionMirrorForTodoistTask(
+  task: typeof schema.todoistTasks.$inferSelect,
+  notionParentPageId: string,
+): Promise<{ notionPageId: string }> {
+  const { pageId } = await createTodoPageFromTodoistMirror({
+    title: task.content,
+    notionParentPageId,
+    task,
+  });
+
+  await insertTaskLinkForPair(pageId, task.id);
+  await mirrorNotionFromTodoist(task.id);
+  return { notionPageId: pageId };
+}
+
 /** Create a Notion sub-task under a top-level project row and insert `task_links`. */
 export async function pushTodoistTaskToNotion(
   todoistTaskId: string,
@@ -126,12 +149,5 @@ export async function pushTodoistTaskToNotion(
     throw new Error("Choose a top-level Notion project row as the parent");
   }
 
-  const { pageId } = await createTodoPageFromTodoistMirror({
-    title: row.content,
-    notionParentPageId,
-    task: row,
-  });
-
-  await insertTaskLinkForPair(pageId, todoistTaskId);
-  await mirrorNotionFromTodoist(todoistTaskId);
+  await createNotionMirrorForTodoistTask(row, notionParentPageId);
 }

@@ -33,11 +33,13 @@ export type MirrorSelection<T> = {
  * `unlinkedTodoistTitles` is the duplicate guard. A title collision means one of
  * two things — a mirror whose `task_links` row was lost, or a task typed into
  * both apps by hand — and creating a second Todoist task is the wrong answer to
- * either. Title matching is too weak to link on (see `link-backfill.ts`, where
- * proposals wait for approval), so these are reported and skipped instead. The
- * guard doubles as crash safety: a run cut off between `addTask` and the link
- * insert leaves an unlinked Todoist task behind, and the next run sees its title
- * rather than making a duplicate.
+ * either. `adoptExactTitleMatches` runs earlier in the same reconcile and links
+ * the collisions that are one-for-one, so what still reaches here is a title
+ * more than one row on a side claims: too weak to link on (see
+ * `link-backfill.ts`, where such proposals wait for approval), and so reported
+ * and skipped instead. The guard doubles as crash safety: a run cut off between
+ * `addTask` and the link insert leaves an unlinked Todoist task behind, and the
+ * next run sees its title rather than making a duplicate.
  */
 export function selectMirrorCandidates<T extends MirrorCandidate>(args: {
   pages: T[];

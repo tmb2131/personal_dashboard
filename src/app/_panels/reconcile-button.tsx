@@ -12,19 +12,41 @@ type ReconcileToast = {
 };
 
 function summarize(r: Extract<ReconcileResult, { ok: true }>): ReconcileToast {
+  // The refresh mirrors Todoist-side edits into Notion before the drift scan
+  // runs, so its count belongs in the same "→ Notion" total the scan reports —
+  // otherwise a run whose only work happened there reads as "in sync".
+  const toNotion = r.mirroredToNotion + r.refresh.mirroredFromTodoist;
   const wrote =
-    r.mirroredToTodoist + r.mirroredToNotion + r.closedArchived + r.backfill.created;
-  const errorCount = r.errors.length + r.backfill.errors.length + (r.backfill.error ? 1 : 0);
+    r.mirroredToTodoist +
+    toNotion +
+    r.closedArchived +
+    r.backfill.created +
+    r.notionBackfill.created +
+    r.adopted.adopted +
+    r.refresh.recurringRepaired;
+  const errorCount =
+    r.errors.length +
+    r.adopted.errors.length +
+    r.backfill.errors.length +
+    (r.backfill.error ? 1 : 0) +
+    r.notionBackfill.errors.length +
+    (r.notionBackfill.error ? 1 : 0);
 
-  // The backfill works through a capped batch per run and holds back anything an
-  // unlinked Todoist task looks to cover already. Both have to be said out loud:
-  // otherwise "in sync" reads as "your Notion task reached Todoist" when it didn't.
+  // Each backfill works through a capped batch per run and holds back anything
+  // the other side looks to cover already. All of it has to be said out loud:
+  // otherwise "in sync" reads as "every task reached the other app" when a
+  // couple of dozen are still queued behind the cap.
   const notes: string[] = [];
-  if (r.backfill.remaining) notes.push(`${r.backfill.remaining} left — run again.`);
-  if (r.backfill.skippedTitleMatch) {
-    notes.push(`${r.backfill.skippedTitleMatch} skipped: same title already in Todoist.`);
-  }
-  if (r.backfill.error) notes.push(`Backfill: ${r.backfill.error}.`);
+  const remaining = r.backfill.remaining + r.notionBackfill.remaining;
+  const heldBack = r.backfill.skippedTitleMatch + r.notionBackfill.skippedTitleMatch;
+  if (remaining) notes.push(`${remaining} left — run again.`);
+  if (heldBack) notes.push(`${heldBack} skipped: same title on both sides.`);
+  // A stale cache is worth naming: everything below it was decided against the
+  // last good copy rather than against what the app says right now.
+  if (r.refresh.notionError) notes.push(`Notion refresh failed: ${r.refresh.notionError}.`);
+  if (r.refresh.todoistError) notes.push(`Todoist refresh failed: ${r.refresh.todoistError}.`);
+  if (r.backfill.error) notes.push(`Todoist backfill: ${r.backfill.error}.`);
+  if (r.notionBackfill.error) notes.push(`Notion backfill: ${r.notionBackfill.error}.`);
   const suffix = notes.length ? ` ${notes.join(" ")}` : "";
 
   if (errorCount) {
@@ -41,9 +63,14 @@ function summarize(r: Extract<ReconcileResult, { ok: true }>): ReconcileToast {
   }
   const parts: string[] = [];
   if (r.backfill.created) parts.push(`${r.backfill.created} added to Todoist`);
+  if (r.notionBackfill.created) parts.push(`${r.notionBackfill.created} added to Notion`);
+  if (r.adopted.adopted) parts.push(`${r.adopted.adopted} relinked`);
   if (r.mirroredToTodoist) parts.push(`${r.mirroredToTodoist} → Todoist`);
-  if (r.mirroredToNotion) parts.push(`${r.mirroredToNotion} → Notion`);
+  if (toNotion) parts.push(`${toNotion} → Notion`);
   if (r.closedArchived) parts.push(`${r.closedArchived} closed`);
+  if (r.refresh.recurringRepaired) {
+    parts.push(`${r.refresh.recurringRepaired} recurring repaired`);
+  }
   return { kind: "success", message: `Reconcile: ${parts.join(", ")}.${suffix}` };
 }
 

@@ -10,6 +10,11 @@ import {
   type TodoistDueLike,
 } from "@/lib/todoist-due";
 import { getNotionDataVersion } from "@/lib/sync/data-version";
+import {
+  collectRecurringProjectIds,
+  normalizeProjectName,
+  TODOIST_INBOX_PROJECT_NAME,
+} from "@/lib/sync/todoist-projects";
 
 export type CalendarEvent = InferSelectModel<typeof schema.gcalEvents>;
 // `raw` is excluded: it is never read, and fetching it on every render was the
@@ -252,10 +257,6 @@ function todoistDueHasTime(t: TodoistTask): boolean {
   return todoistDueHasTimeOf(todoistRawDue(t));
 }
 
-function normalizeProjectName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
 function isTodoistInboxProject(project: TodoistProject): boolean {
   const raw = project.raw as {
     inbox_project?: boolean;
@@ -264,7 +265,7 @@ function isTodoistInboxProject(project: TodoistProject): boolean {
   } | null;
 
   return (
-    normalizeProjectName(project.name) === "inbox" ||
+    normalizeProjectName(project.name) === TODOIST_INBOX_PROJECT_NAME ||
     raw?.inbox_project === true ||
     raw?.is_inbox_project === true ||
     raw?.isInboxProject === true
@@ -379,27 +380,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const todoistProjectById = new Map(todoistProjects.map((p) => [p.id, p]));
-  const todoistChildProjectIdsByParent = new Map<string, string[]>();
-  for (const p of todoistProjects) {
-    if (!p.parentId) continue;
-    const arr = todoistChildProjectIdsByParent.get(p.parentId) ?? [];
-    arr.push(p.id);
-    todoistChildProjectIdsByParent.set(p.parentId, arr);
-  }
-  const recurringRootProjectIds = todoistProjects
-    .filter((p) => normalizeProjectName(p.name) === "recurring")
-    .map((p) => p.id);
-  const recurringProjectIds = new Set<string>(recurringRootProjectIds);
-  const queue = [...recurringRootProjectIds];
-  while (queue.length) {
-    const parentId = queue.shift()!;
-    const childIds = todoistChildProjectIdsByParent.get(parentId) ?? [];
-    for (const childId of childIds) {
-      if (recurringProjectIds.has(childId)) continue;
-      recurringProjectIds.add(childId);
-      queue.push(childId);
-    }
-  }
+  const recurringProjectIds = collectRecurringProjectIds(todoistProjects);
   const isRecurringProjectTask = (projectId: string | null | undefined): boolean =>
     Boolean(projectId && recurringProjectIds.has(projectId));
   const linkByNotion = new Map(links.map((l) => [l.notionPageId, l]));

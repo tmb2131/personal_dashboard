@@ -9,6 +9,20 @@ export default auth((req) => {
   if (isPublic) return;
   if (req.auth) return;
 
+  // Scheduled sync callers (Vercel cron, GitHub Actions) authenticate with a
+  // bearer secret instead of a session - the sync routes re-check it
+  // themselves, so this only decides whether the request reaches them at all.
+  if (req.nextUrl.pathname.startsWith("/api/sync")) {
+    const authHeader = req.headers.get("authorization");
+    const schedulerSecrets = [
+      process.env.CRON_SECRET,
+      process.env.SYNC_TRIGGER_SECRET,
+    ].filter((s): s is string => Boolean(s));
+    if (authHeader && schedulerSecrets.some((s) => authHeader === `Bearer ${s}`)) {
+      return;
+    }
+  }
+
   const signInUrl = new URL("/sign-in", req.nextUrl.origin);
   signInUrl.searchParams.set("from", req.nextUrl.pathname);
   return Response.redirect(signInUrl);

@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { NextResponse, type NextRequest } from "next/server";
+import { auth, getGoogleAccessToken } from "@/lib/auth";
 import {
   describeGcalError,
   getCalendarClientFromAccessToken,
@@ -10,7 +10,7 @@ import {
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauth" }, { status: 401 });
 
@@ -18,7 +18,7 @@ export async function POST() {
     // Refresh-token client first: the session access token is stored once at
     // sign-in and never refreshed (see lib/auth.ts), so it expires about an
     // hour into a 30-day session while the server refresh token keeps working.
-    const accessToken = (session as typeof session & { accessToken?: string }).accessToken;
+    const accessToken = await getGoogleAccessToken(req);
     const cal =
       (await getCalendarClientFromRefresh()) ??
       (accessToken ? getCalendarClientFromAccessToken(accessToken) : null);

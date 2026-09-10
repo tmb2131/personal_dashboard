@@ -1,6 +1,8 @@
 import NextAuth from "next-auth";
+import { getToken } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import type { NextRequest } from "next/server";
 
 const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL?.toLowerCase();
 
@@ -60,12 +62,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return token;
     },
-    async session({ session, token }) {
-      // Surface the Google access token to server components that need GCal.
-      (session as typeof session & { accessToken?: string }).accessToken =
-        token.accessToken as string | undefined;
-      return session;
-    },
   },
   pages: { signIn: "/sign-in" },
 });
+
+/**
+ * Server-only access to the Google access token. The token lives inside the
+ * encrypted session JWT only - it is deliberately NOT copied into the
+ * client-visible session object, because /api/auth/session returns that object
+ * to any JavaScript running in the page.
+ */
+export async function getGoogleAccessToken(
+  req: NextRequest,
+): Promise<string | undefined> {
+  const token = await getToken({ req });
+  return (token?.accessToken as string | null | undefined) ?? undefined;
+}

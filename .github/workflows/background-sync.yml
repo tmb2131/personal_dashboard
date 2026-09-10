@@ -1,0 +1,22 @@
+name: Background sync
+
+# Vercel Hobby crons can fire at most once a day, so the 30-minute background
+# cadence lives here. SYNC_TRIGGER_SECRET must match the SYNC_TRIGGER_SECRET
+# env var on the Vercel project. Note: GitHub pauses scheduled workflows after
+# 60 days of repo inactivity (the daily Vercel cron on /api/sync/run is the
+# backstop).
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run full sync
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.SYNC_TRIGGER_SECRET }}" \
+            https://personal-dashboard-five-sable.vercel.app/api/sync/run

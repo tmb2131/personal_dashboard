@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { NextResponse, type NextRequest } from "next/server";
+import { auth, getGoogleAccessToken } from "@/lib/auth";
 import { syncNotion } from "@/lib/sync/notion";
 import { syncTodoist, type SyncTodoistResult } from "@/lib/sync/todoist";
 import { reconcileTodoistSyncResult } from "@/lib/sync/todoist-reconcile";
@@ -8,11 +8,31 @@ import { ensureGcalWatchesHealthy, syncGcal } from "@/lib/sync/gcal";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST() {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "unauth" }, { status: 401 });
+/**
+ * Auth: a signed-in dashboard session, OR a scheduler request authenticated
+ * with `Authorization: Bearer ${CRON_SECRET}` (injected automatically by
+ * Vercel cron) or `Authorization: Bearer ${SYNC_TRIGGER_SECRET}` (used by the
+ * GitHub Actions background-sync schedule - Hobby Vercel crons can only fire
+ * once a day, so the 30-minute cadence runs from GitHub).
+ */
+export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  const schedulerSecrets = [
+    process.env.CRON_SECRET,
+    process.env.SYNC_TRIGGER_SECRET,
+  ].filter((s): s is string => Boolean(s));
+  const isScheduler =
+    !!authHeader &&
+    schedulerSecrets.some((s) => authHeader === `Bearer ${s}`);
 
-  const accessToken = (session as typeof session & { accessToken?: string }).accessToken;
+  let accessToken: string | undefined;
+  if (!isScheduler) {
+    const session = await auth();
+    if (!session) return NextResponse.json({ error: "unauth" }, { status: 401 });
+    // The Google token is read server-side from the encrypted session JWT; it
+    // is never exposed on the client session object (see lib/auth.ts).
+    accessToken = await getGoogleAccessToken(req);
+  }
   const watchHealthBefore = process.env.GOOGLE_REFRESH_TOKEN
     ? await ensureGcalWatchesHealthy()
         .then((r) => ({ ok: true as const, ...r }))
@@ -64,6 +84,9 @@ export async function POST() {
     { status },
   );
 }
+
+// Vercel cron invokes routes with GET; the scheduler auth above covers both.
+export const GET = POST;
 
 function serializeResult(r: PromiseSettledResult<unknown>) {
   return r.status === "fulfilled"

@@ -4,6 +4,10 @@
     {
       "path": "/api/sync/reconcile",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/sync/run",
+      "schedule": "30 6 * * *"
     }
   ]
 }

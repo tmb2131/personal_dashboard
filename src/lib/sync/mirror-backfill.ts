@@ -32,7 +32,7 @@ import { getInboxProjectId, getTodoistProjectIdByName } from "@/lib/sync/todoist
  * fallback is what broke every Todoist write path when the "Personal" project was
  * deleted.
  */
-const MIRROR_PROJECT_NAME = "Notion";
+export const MIRROR_PROJECT_NAME = "Notion";
 
 /**
  * Most tasks one run will create. The first run after this shipped has a whole

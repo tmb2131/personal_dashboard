@@ -19,13 +19,14 @@ The plan and architecture decisions live in [`/Users/tombrosens/.claude/plans/i-
 - Google Calendar sync (Tom + Sriya, 14-day rolling window) → Postgres; optional **incremental sync** via stored `syncToken`, **push watches** + `/api/webhooks/gcal`, and **self-healing watch renewal** from webhook/manual sync traffic (no cron required).
 - Todoist sync (tasks + projects) → Postgres (full + targeted task upserts for webhooks).
 - Linking model: `task_links` and `category_project_links` tables, plus a heuristic title-match backfill.
-- **Reconcile** (daily cron, or the dashboard button) is the "make both apps agree" button. It refreshes the Notion and Todoist caches, then runs four passes:
+- **Reconcile** (daily cron, or the dashboard button) is the "make both apps agree" button. It refreshes the Notion and Todoist caches, then runs five passes:
   1. **Adopt** — an unlinked Notion sub-task and an unlinked Todoist task that share a title *one-for-one* get the `task_links` row they were always missing. Two rows on either side stay ambiguous and are reported, never guessed at; `link-backfill.ts` is where a human resolves those.
   2. **Drift** — re-hash every pair and re-mirror whichever side moved.
   3. **Notion → Todoist** — create the Todoist side of Notion sub-tasks that never had one. New tasks land in the Todoist project named **Notion** (the inbox if there is no such project).
   4. **Todoist → Notion** — create the Notion side of Todoist tasks that never had one, filed under the Notion project row whose title matches their Todoist project and under the project row named **Inbox** when nothing matches. Todoist's own inbox is called "Inbox" too, so unfiled work lands in the Notion Inbox by the same rule. Tasks in the Todoist **Recurring** project (and anything nested under it) are habits, not tasks, and are left out entirely.
+  5. **File out of the inbox** — a linked task sitting in the Todoist **Inbox** whose Notion page is filed under a project other than **Inbox** moves into the Todoist project whose name matches that Notion project, falling back to the **Notion** project when no name matches. It only ever moves tasks *out* of the inbox: a task you filed yourself stays where you put it. Nothing is remembered between runs, so Notion's filing keeps winning — drag a filed task back into the inbox and the next run files it again. Todoist sub-tasks are left alone (the move endpoint takes a project *or* a parent, so filing one would detach it), and a task with no matching project and no **Notion** project to fall back on is reported rather than moved somewhere arbitrary.
 
-  Passes 3 and 4 are the only automatic *creates* — every other path is link-aware and skips a task with no link yet. Both are capped per run and hold back a task whose title the other side already carries; the toast says how many are left and how many were held back.
+  Passes 3 and 4 are the only automatic *creates* — every other path is link-aware and skips a task with no link yet. Both are capped per run and hold back a task whose title the other side already carries; the toast says how many are left and how many were held back. Pass 5 is capped per run too, and reports what it could not place.
 - **M3 — Orchestrator:** link-aware mirroring (`lib/sync/orchestrator.ts`), `audit_log`, recurring Todoist instance repair when links bump to a new task id.
 - **M4 — Writes:** dashboard task checkbox calls Notion + Todoist APIs and updates `task_links` / local cache (`applyDashboardToggle`).
 - **M6:** webhook payload size limits + structured `audit_log`; installable PWA manifest (`src/app/manifest.ts` + `public/icon.svg`); backups documented below.
@@ -175,10 +176,11 @@ src/
       audit.ts               — append-only audit_log writer
       mappings.ts            — Notion ↔ Todoist field translation (single source of truth)
       link-backfill.ts       — heuristic title-match linker
-      reconcile.ts           — refresh both caches, then adopt → drift → both backfills
+      reconcile.ts           — refresh both caches, then adopt → drift → both backfills → refile
       link-adoption.ts       — links unlinked rows that match one-for-one on title
       mirror-backfill.ts     — creates the Todoist side of never-mirrored Notion sub-tasks
       notion-backfill.ts     — creates the Notion side of never-mirrored Todoist tasks
+      project-refile.ts      — moves linked Todoist inbox tasks into the project Notion filed them under
       todoist-projects.ts    — shared project-tree reading (which ids are Recurring)
     dashboard-data.ts        — server-side data composition for the page
     utils.ts                 — cn(), date helpers

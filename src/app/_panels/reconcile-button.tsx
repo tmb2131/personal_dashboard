@@ -23,30 +23,42 @@ function summarize(r: Extract<ReconcileResult, { ok: true }>): ReconcileToast {
     r.backfill.created +
     r.notionBackfill.created +
     r.adopted.adopted +
-    r.refresh.recurringRepaired;
+    r.refresh.recurringRepaired +
+    r.refiled.moved;
   const errorCount =
     r.errors.length +
     r.adopted.errors.length +
     r.backfill.errors.length +
     (r.backfill.error ? 1 : 0) +
     r.notionBackfill.errors.length +
-    (r.notionBackfill.error ? 1 : 0);
+    (r.notionBackfill.error ? 1 : 0) +
+    r.refiled.errors.length +
+    (r.refiled.error ? 1 : 0);
 
   // Each backfill works through a capped batch per run and holds back anything
   // the other side looks to cover already. All of it has to be said out loud:
   // otherwise "in sync" reads as "every task reached the other app" when a
   // couple of dozen are still queued behind the cap.
   const notes: string[] = [];
-  const remaining = r.backfill.remaining + r.notionBackfill.remaining;
+  const remaining = r.backfill.remaining + r.notionBackfill.remaining + r.refiled.remaining;
   const heldBack = r.backfill.skippedTitleMatch + r.notionBackfill.skippedTitleMatch;
   if (remaining) notes.push(`${remaining} left — run again.`);
   if (heldBack) notes.push(`${heldBack} skipped: same title on both sides.`);
+  // Both of these mean a task stayed in the inbox that Notion says shouldn't
+  // be there, and neither is something the next run fixes on its own.
+  if (r.refiled.unresolved) {
+    notes.push(`${r.refiled.unresolved} unfiled: no matching Todoist project.`);
+  }
+  if (r.refiled.skippedSubtasks) {
+    notes.push(`${r.refiled.skippedSubtasks} left in inbox: Todoist sub-tasks.`);
+  }
   // A stale cache is worth naming: everything below it was decided against the
   // last good copy rather than against what the app says right now.
   if (r.refresh.notionError) notes.push(`Notion refresh failed: ${r.refresh.notionError}.`);
   if (r.refresh.todoistError) notes.push(`Todoist refresh failed: ${r.refresh.todoistError}.`);
   if (r.backfill.error) notes.push(`Todoist backfill: ${r.backfill.error}.`);
   if (r.notionBackfill.error) notes.push(`Notion backfill: ${r.notionBackfill.error}.`);
+  if (r.refiled.error) notes.push(`Inbox filing: ${r.refiled.error}.`);
   const suffix = notes.length ? ` ${notes.join(" ")}` : "";
 
   if (errorCount) {
@@ -65,6 +77,7 @@ function summarize(r: Extract<ReconcileResult, { ok: true }>): ReconcileToast {
   if (r.backfill.created) parts.push(`${r.backfill.created} added to Todoist`);
   if (r.notionBackfill.created) parts.push(`${r.notionBackfill.created} added to Notion`);
   if (r.adopted.adopted) parts.push(`${r.adopted.adopted} relinked`);
+  if (r.refiled.moved) parts.push(`${r.refiled.moved} filed out of inbox`);
   if (r.mirroredToTodoist) parts.push(`${r.mirroredToTodoist} → Todoist`);
   if (toNotion) parts.push(`${toNotion} → Notion`);
   if (r.closedArchived) parts.push(`${r.closedArchived} closed`);

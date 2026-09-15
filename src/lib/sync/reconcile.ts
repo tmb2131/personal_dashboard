@@ -9,16 +9,21 @@
  * place to notice is here, on a daily cron or on demand from the button.
  *
  * A link scan structurally cannot see a task that has no link — which is every
- * task typed into one app and never carried to the other. Three more passes
- * cover that, and together they are what makes the button's promise true:
+ * task typed into one app and never carried to the other. Nor can it see where
+ * a pair *lives*: the hash carries one project id, never both, so a page and
+ * its task filed under different projects look identical to it. Four more
+ * passes cover all of that, and together they are what makes the button's
+ * promise true:
  *
  *   1. `adoptExactTitleMatches` — link the rows that were plainly already
  *      pairs, so the create passes below don't make a second copy of them.
  *   2. the drift scan — repair the pairs that exist, adopted ones included.
  *   3. `createMissingTodoistMirrors` — Notion sub-tasks with no Todoist side.
  *   4. `createMissingNotionMirrors` — Todoist tasks with no Notion side.
+ *   5. `refileInboxTasks` — pairs Notion has filed under a project while
+ *      Todoist still holds them in its inbox.
  *
- * All four read the cached copies in Postgres, so the run starts by refreshing
+ * All five read the cached copies in Postgres, so the run starts by refreshing
  * that cache from both APIs. Without it "everything matches" would only ever
  * mean "everything matched whenever the last webhook landed".
  */
@@ -38,6 +43,7 @@ import {
 } from "@/lib/sync/notion-backfill";
 import { syncNotion } from "@/lib/sync/notion";
 import { hashForPair, mirrorNotionFromTodoist, mirrorTodoistFromNotion } from "@/lib/sync/orchestrator";
+import { refileInboxTasks, type ProjectRefileSummary } from "@/lib/sync/project-refile";
 import { syncTodoist } from "@/lib/sync/todoist";
 import { reconcileTodoistSyncResult } from "@/lib/sync/todoist-reconcile";
 import type { NotionPage, TodoistTask } from "@/lib/sync/mappings";
@@ -71,6 +77,8 @@ export type ReconcileSummary = {
   backfill: MirrorBackfillSummary;
   /** Todoist tasks that had no Notion counterpart to scan. */
   notionBackfill: NotionBackfillSummary;
+  /** Inbox tasks Notion had already filed under a project. */
+  refiled: ProjectRefileSummary;
 };
 
 export async function reconcileAllLinks(): Promise<ReconcileSummary> {
@@ -91,6 +99,10 @@ export async function reconcileAllLinks(): Promise<ReconcileSummary> {
     adopted,
     backfill: await createMissingTodoistMirrors(),
     notionBackfill: await createMissingNotionMirrors(),
+    // Last, and the order is the point: it reads `task_links`, so it should see
+    // the links adoption and both create passes have just written, and it
+    // rewrites hashes, which is only safe once the drift scan has settled them.
+    refiled: await refileInboxTasks(),
   };
 
   await logAudit({
@@ -153,7 +165,7 @@ function errorMessage(reason: unknown): string {
 
 type DriftSummary = Omit<
   ReconcileSummary,
-  "refresh" | "adopted" | "backfill" | "notionBackfill"
+  "refresh" | "adopted" | "backfill" | "notionBackfill" | "refiled"
 >;
 
 async function scanTaskLinks(): Promise<DriftSummary> {

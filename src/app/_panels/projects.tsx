@@ -135,8 +135,12 @@ function NextStepLine({
         setError(result.error);
         return;
       }
-      setOverride(undefined);
-      router.refresh();
+      // After the await we're outside the transition: clear the override in a
+      // nested one with the refresh, or the old next step flashes back first.
+      startTransition(() => {
+        setOverride(undefined);
+        router.refresh();
+      });
     });
   };
 
@@ -243,8 +247,12 @@ export function ProjectRow({ p }: { p: Project }) {
         setFocusOverride(!next);
         return;
       }
-      setFocusOverride(null);
-      router.refresh();
+      // After the await we're outside the transition: clear the override in a
+      // nested one with the refresh, or the star flips back first.
+      startTransition(() => {
+        setFocusOverride(null);
+        router.refresh();
+      });
     });
   };
 
@@ -263,8 +271,12 @@ export function ProjectRow({ p }: { p: Project }) {
         setStatusError(result.error);
         return;
       }
-      setStatusOverride(null);
-      router.refresh();
+      // After the await we're outside the transition: clear the override in a
+      // nested one with the refresh, or the old status flashes back first.
+      startStatusTransition(() => {
+        setStatusOverride(null);
+        router.refresh();
+      });
     });
   };
 

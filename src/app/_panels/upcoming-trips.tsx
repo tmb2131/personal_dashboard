@@ -311,8 +311,12 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
         setStatusOverride(previous);
         return;
       }
-      setStatusOverride(null);
-      router.refresh();
+      // After the await we're outside the transition: clear the override in a
+      // nested one with the refresh, or the old status flashes back first.
+      startStatusTransition(() => {
+        setStatusOverride(null);
+        router.refresh();
+      });
     });
   };
   const fallbackSubtask = [...trip.subtasks]

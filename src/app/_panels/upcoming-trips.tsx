@@ -2,11 +2,12 @@
 
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   createTripAction,
   setProjectStatusAction,
+  setProjectTitleAction,
   setTripDatesAction,
 } from "@/app/actions";
 import type { Project } from "@/lib/dashboard-data";
@@ -284,6 +285,131 @@ function TripDatesEditor({ trip }: { trip: Project }) {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden className="block">
+      <path
+        d="M4 20l1.2-4.4L15.8 5a2.1 2.1 0 0 1 3 3L8.4 18.6 4 20zM14 6.8l3.2 3.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * The trip's name, renamed in place. The pencil (shown on row hover, and always
+ * on touch screens) swaps the name for an input: Enter or blur saves, Escape
+ * backs out — the same contract as a project's next-step line. Clicking the
+ * name itself still expands the row.
+ */
+function TripTitle({
+  trip,
+  expanded,
+  onToggle,
+}: {
+  trip: Project;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const router = useRouter();
+  const [override, setOverride] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  // Enter and Escape close the editor themselves, and the input can fire blur
+  // on its way out — without this, blur would save a second time, or save the
+  // very name Escape just abandoned.
+  const closed = useRef(false);
+
+  const title = override ?? trip.title;
+
+  const open = () => {
+    setDraft(title);
+    setError(null);
+    closed.current = false;
+    setEditing(true);
+  };
+
+  const save = () => {
+    closed.current = true;
+    setEditing(false);
+    const next = draft.trim();
+    // Emptying the field backs out rather than erroring: a trip keeps its name.
+    if (!next || next === title) return;
+    setOverride(next);
+    setError(null);
+    startTransition(async () => {
+      const result = await setProjectTitleAction({ notionPageId: trip.id, title: next });
+      // Settle in the same transition as the refresh, so the old name can't
+      // flash back while the refreshed trip is still on its way.
+      startTransition(() => {
+        setOverride(null);
+        if (result.ok) router.refresh();
+        else setError(result.error);
+      });
+    });
+  };
+
+  return (
+    <div className="min-w-0 flex-1">
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={() => {
+            if (!closed.current) save();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              save();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              closed.current = true;
+              setEditing(false);
+            }
+          }}
+          placeholder="Trip name"
+          aria-label="Trip name"
+          className="h-7 w-full rounded border border-border bg-bg px-2 text-[14px] font-medium text-fg placeholder:text-fg-subtle"
+        />
+      ) : (
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <button
+            type="button"
+            onClick={onToggle}
+            className={cn(
+              "min-w-0 truncate text-left text-[14px] font-medium transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted",
+              pending && "opacity-60",
+            )}
+            aria-expanded={expanded}
+          >
+            {title}
+          </button>
+          <button
+            type="button"
+            onClick={open}
+            disabled={pending}
+            aria-label="Rename trip"
+            title="Rename trip"
+            className="shrink-0 self-center text-fg-subtle transition-opacity duration-150 hover:text-fg-muted motion-reduce:transition-none md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+          >
+            <PencilIcon />
+          </button>
+        </div>
+      )}
+      {error && <div className="mt-0.5 text-[11px] text-danger">{error}</div>}
+    </div>
+  );
+}
+
 function TripRow({ trip, now }: { trip: Project; now: Date }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -336,7 +462,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
     <li
       ref={setDroppableRef}
       className={cn(
-        "rounded-lg px-5 py-3 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50",
+        "group rounded-lg px-5 py-3 transition-colors duration-200 ease-out motion-reduce:duration-0 hover:bg-bg-elevated/50",
         isActiveDrag && "ring-1 ring-border-strong/40",
         isOver && "bg-accent-soft ring-1 ring-accent",
       )}
@@ -356,14 +482,11 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
 
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex w-full items-baseline gap-2">
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="flex min-w-0 flex-1 items-baseline text-left transition-colors duration-200 ease-out motion-reduce:duration-0 hover:text-fg-muted"
-              aria-expanded={expanded}
-            >
-              <span className="min-w-0 truncate text-[14px] font-medium">{trip.title}</span>
-            </button>
+            <TripTitle
+              trip={trip}
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+            />
             <TripStatusBadge
               booked={isBooked}
               disabled={statusPending}

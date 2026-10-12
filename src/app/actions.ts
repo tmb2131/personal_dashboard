@@ -1088,6 +1088,64 @@ export async function setProjectStatusAction(args: {
   }
 }
 
+/**
+ * Rename a project row. The Trips view uses it so a trip whose plans changed can
+ * be repurposed in place — name, dates and sub-tasks — instead of deleted and
+ * re-added.
+ *
+ * Unlike the next step below, the title is a mirrored field: `syncHash()` folds
+ * it in, and a project row can carry a `task_links` row of its own (a dated
+ * trip cross-posted to Todoist, or an approved title-match link). A linked row
+ * is pushed through here, the same way `setProjectStatusAction` does it.
+ */
+export async function setProjectTitleAction(args: {
+  notionPageId: string;
+  title: string;
+}): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionPageId) return { ok: false, error: "Missing Notion page" };
+  const title = args.title.trim();
+  if (!title) return { ok: false, error: "Name is required" };
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    await updateNotionTodoFields(args.notionPageId, { title });
+    await db
+      .update(schema.notionPages)
+      .set({ title, updatedAt: new Date() })
+      .where(eq(schema.notionPages.id, args.notionPageId));
+
+    const [link] = await db
+      .select({ id: schema.taskLinks.id })
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
+    if (link && process.env.TODOIST_TOKEN) {
+      try {
+        await mirrorTodoistFromNotion(args.notionPageId);
+      } catch (e) {
+        await logAudit({
+          source: "dashboard",
+          op: "set_project_title_mirror_error",
+          payload: args,
+          error: (e as Error).message,
+        });
+      }
+    }
+
+    await logAudit({ source: "dashboard", op: "set_project_title", payload: args });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "set_project_title_error",
+      payload: args,
+      error: (e as Error).message,
+    });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 /** Max length accepted for a project's one-line next step. */
 const KEY_NEXT_STEP_MAX = 200;
 

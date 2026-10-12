@@ -207,8 +207,12 @@ function TripDatesEditor({ trip }: { trip: Project }) {
         setError(result.error);
         return;
       }
-      setEditing(false);
-      router.refresh();
+      // After the await we're outside the transition: close the editor in a
+      // nested one with the refresh, or the old dates flash back first.
+      startTransition(() => {
+        setEditing(false);
+        router.refresh();
+      });
     });
   };
 

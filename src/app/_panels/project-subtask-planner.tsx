@@ -88,11 +88,15 @@ export function ProjectSubtaskPlanner({
         setTaskError(result.error);
         return;
       }
-      setEditingTaskId(null);
-      setEditingTitle("");
-      setEditingDescription("");
-      setEditingDueDate("");
-      router.refresh();
+      // After the await we're outside the transition: close the editor in a
+      // nested one with the refresh, or the old sub-task flashes back first.
+      startTaskTransition(() => {
+        setEditingTaskId(null);
+        setEditingTitle("");
+        setEditingDescription("");
+        setEditingDueDate("");
+        router.refresh();
+      });
     });
   };
 

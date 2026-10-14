@@ -33,6 +33,7 @@ import {
   updateNotionTripDates,
   updateNotionTodoFields,
   updateNotionTodoStatus,
+  trashNotionPage,
 } from "@/lib/sync/notion";
 import { reconcileAllLinks, type ReconcileSummary } from "@/lib/sync/reconcile";
 import { getInboxProjectId, syncTodoist, syncTodoistTasksByIds } from "@/lib/sync/todoist";
@@ -1026,6 +1027,71 @@ export async function setTripDatesAction(args: {
     await logAudit({
       source: "dashboard",
       op: "set_trip_dates_error",
+      payload: args,
+      error: (e as Error).message,
+    });
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/**
+ * Delete a trip: move its Notion page to the trash and hide it locally at once.
+ * Refuses anything outside the Travel/Events category, so a stale or forged page
+ * id can't trash a project through the trips UI.
+ *
+ * A trip linked to a Todoist task is mirrored through `mirrorTodoistFromNotion`,
+ * which closes the Todoist task for an archived page. Sub-tasks are separate
+ * Notion pages and are left alone; they stay restorable together with the trip.
+ */
+export async function deleteTripAction(args: { notionPageId: string }): Promise<CrossPostResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: "Not signed in" };
+  if (!args.notionPageId?.trim()) return { ok: false, error: "Missing Notion page" };
+  if (!process.env.NOTION_TOKEN) return { ok: false, error: "NOTION_TOKEN missing" };
+
+  try {
+    const [row] = await db
+      .select({ categoryTitle: schema.notionCategories.title })
+      .from(schema.notionPages)
+      .leftJoin(
+        schema.notionCategories,
+        eq(schema.notionPages.categoryId, schema.notionCategories.id),
+      )
+      .where(eq(schema.notionPages.id, args.notionPageId));
+    if (!row) return { ok: false, error: "Trip not found" };
+    if (!isTravelEventsCategory(row.categoryTitle)) {
+      return { ok: false, error: "Only trips can be deleted here" };
+    }
+
+    await trashNotionPage(args.notionPageId);
+    await db
+      .update(schema.notionPages)
+      .set({ archived: true, updatedAt: new Date() })
+      .where(eq(schema.notionPages.id, args.notionPageId));
+
+    const [link] = await db
+      .select({ id: schema.taskLinks.id })
+      .from(schema.taskLinks)
+      .where(eq(schema.taskLinks.notionPageId, args.notionPageId));
+    if (link && process.env.TODOIST_TOKEN) {
+      try {
+        await mirrorTodoistFromNotion(args.notionPageId);
+      } catch (e) {
+        await logAudit({
+          source: "dashboard",
+          op: "delete_trip_mirror_error",
+          payload: args,
+          error: (e as Error).message,
+        });
+      }
+    }
+
+    await logAudit({ source: "dashboard", op: "delete_trip", payload: args });
+    return { ok: true };
+  } catch (e) {
+    await logAudit({
+      source: "dashboard",
+      op: "delete_trip_error",
       payload: args,
       error: (e as Error).message,
     });

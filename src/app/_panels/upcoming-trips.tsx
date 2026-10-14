@@ -6,6 +6,7 @@ import { useRef, useState, useTransition } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   createTripAction,
+  deleteTripAction,
   setProjectStatusAction,
   setProjectTitleAction,
   setTripDatesAction,
@@ -414,6 +415,89 @@ function TripTitle({
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden className="block">
+      <path
+        d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Trash icon (on row hover, always on touch screens) that turns into an inline
+ * "Delete? Yes / No" confirm. The page goes to Notion's trash, so it's
+ * restorable there; the confirm just stops a stray click.
+ */
+function TripDeleteButton({ trip }: { trip: Project }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const handleDelete = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteTripAction({ notionPageId: trip.id });
+      if (!result.ok) {
+        setError(result.error);
+        setConfirming(false);
+        return;
+      }
+      // Stay in the transition through the refresh so the row doesn't flash
+      // back to normal before it disappears.
+      startTransition(() => {
+        router.refresh();
+      });
+    });
+  };
+
+  if (confirming) {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-muted">
+        <span>Delete?</span>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={pending}
+          className="rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-danger hover:text-fg disabled:opacity-50"
+        >
+          {pending ? "Deleting…" : "Yes"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          disabled={pending}
+          className="rounded border border-border bg-bg-elevated px-1.5 py-0.5 hover:text-fg disabled:opacity-50"
+        >
+          No
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex shrink-0 items-center gap-1.5">
+      {error && <span className="text-[11px] text-danger">{error}</span>}
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        aria-label="Delete trip"
+        title="Delete trip"
+        className="text-fg-subtle transition-opacity duration-150 hover:text-danger motion-reduce:transition-none md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+      >
+        <TrashIcon />
+      </button>
+    </span>
+  );
+}
+
 function TripRow({ trip, now }: { trip: Project; now: Date }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -500,6 +584,7 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
               disabled={statusPending}
               onChange={handleStatusChange}
             />
+            <TripDeleteButton trip={trip} />
           </div>
 
           <TripDatesEditor trip={trip} />

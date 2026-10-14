@@ -433,6 +433,14 @@ export async function updateNotionTripDates(
   });
 }
 
+/**
+ * Move a page to Notion's trash. Notion's "delete" is always this: the page
+ * stays restorable from the trash for 30 days, so nothing is lost for good.
+ */
+export async function trashNotionPage(pageId: string) {
+  await client().pages.update({ page_id: pageId, in_trash: true });
+}
+
 export type NotionTodoFieldUpdate = {
   title?: string;
   status?: NotionPage["status"];

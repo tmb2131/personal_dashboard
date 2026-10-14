@@ -155,6 +155,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
             sectionId="undated-trips"
             emptyCopy="No undated trip ideas"
             showAdd
+            collapsedLimit={8}
           />
         </View>
       </div>

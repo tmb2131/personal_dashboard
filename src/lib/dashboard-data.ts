@@ -905,8 +905,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       const ad = a.dateStart?.getTime() ?? Number.MAX_SAFE_INTEGER;
       const bd = b.dateStart?.getTime() ?? Number.MAX_SAFE_INTEGER;
       return ad - bd;
-    })
-    .slice(0, 6);
+    });
 
   // ----- Dateless trips (Travel/Events with no start date; exclude Done and empty shells)
   const datelessTrips = allProjects
@@ -919,8 +918,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         if (b.status === "In progress") return 1;
       }
       return a.title.localeCompare(b.title);
-    })
-    .slice(0, 8);
+    });
 
   // ----- Life areas (top-level pages with focus = Life Area)
   const lifeAreas = allProjects.filter((p) => p.isLifeArea).slice(0, 8);

@@ -535,6 +535,7 @@ export function UpcomingTrips({
   sectionId = "upcoming-trips",
   emptyCopy = "Nothing on the horizon",
   showAdd = false,
+  collapsedLimit = 6,
 }: {
   trips: Project[];
   now: Date;
@@ -542,8 +543,13 @@ export function UpcomingTrips({
   sectionId?: string;
   emptyCopy?: string;
   showAdd?: boolean;
+  /** How many trips show before the "Show more" toggle takes over. */
+  collapsedLimit?: number;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const isEmpty = trips.length === 0;
+  const hiddenCount = Math.max(0, trips.length - collapsedLimit);
+  const visibleTrips = showAll ? trips : trips.slice(0, collapsedLimit);
   return (
     <section id={sectionId} className="scroll-mt-6 border-t border-border">
       <SectionHeader
@@ -560,10 +566,21 @@ export function UpcomingTrips({
         <EmptyState message={`${emptyCopy}.`} />
       ) : (
         <ul>
-          {trips.map((trip) => (
+          {visibleTrips.map((trip) => (
             <TripRow key={trip.id} trip={trip} now={now} />
           ))}
         </ul>
+      )}
+
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          aria-expanded={showAll}
+          className="flex w-full items-center gap-2 px-5 py-2.5 text-left text-[12px] text-fg-subtle hover:text-fg"
+        >
+          {showAll ? "Show less" : `Show ${hiddenCount} more`}
+        </button>
       )}
     </section>
   );

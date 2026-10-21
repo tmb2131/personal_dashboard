@@ -7,6 +7,7 @@ import {
   FASTEST_RUNG,
   SLOWEST_RUNG,
   delayForRung,
+  isIdle,
   resumeDelayMs,
   slower,
 } from "./sync-pace";
@@ -123,6 +124,9 @@ export function AutoTodoistSync({
     let timer = 0;
     let generation = 0;
     let stopped = false;
+    let lastActivityAt = Date.now();
+    /** Set once the loop has stopped itself for idleness; only activity restarts it. */
+    let parked = false;
 
     /**
      * Every reschedule takes a new generation, so a tick still awaiting its
@@ -142,6 +146,12 @@ export function AutoTodoistSync({
       if (stopped || gen !== generation || document.visibilityState !== "visible") {
         return;
       }
+      // Nobody has touched the page for a while: stop rather than keep waking
+      // the database for a tab that is merely open. Activity starts it again.
+      if (isIdle(lastActivityAt, Date.now())) {
+        parked = true;
+        return;
+      }
       schedule(delayForRung(rung.current));
     };
 
@@ -153,6 +163,8 @@ export function AutoTodoistSync({
 
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
+      lastActivityAt = Date.now();
+      parked = false;
       // Coming back to the tab is the strongest "the user is here" signal there
       // is, and the data may well have moved while it was hidden.
       rung.current = FASTEST_RUNG;
@@ -162,9 +174,18 @@ export function AutoTodoistSync({
     /**
      * Touching the page resets the pace without firing a request of its own.
      * The guard means the reschedule happens once, on the first sign of life
-     * after backing off; every later event is free.
+     * after backing off; every later event is free. A loop parked for idleness
+     * restarts with a poll instead, since the user is back and data may be stale.
      */
     const onActivity = () => {
+      lastActivityAt = Date.now();
+      if (parked) {
+        // Data may have moved while the loop slept, so catch up right away.
+        parked = false;
+        rung.current = FASTEST_RUNG;
+        start();
+        return;
+      }
       if (rung.current === FASTEST_RUNG) return;
       rung.current = FASTEST_RUNG;
       schedule(resumeDelayMs(lastRunAt.current, Date.now()));

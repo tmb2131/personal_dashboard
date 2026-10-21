@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   FASTEST_RUNG,
   SLOWEST_RUNG,
+  IDLE_CUTOFF_MS,
   SYNC_DELAYS_MS,
   delayForRung,
+  isIdle,
   resumeDelayMs,
   slower,
 } from "./sync-pace";
@@ -63,5 +65,19 @@ describe("resumeDelayMs", () => {
 
   it("never returns a negative delay", () => {
     expect(resumeDelayMs(0, Date.now())).toBe(0);
+  });
+});
+
+describe("isIdle", () => {
+  it("is not idle while the user was active within the cutoff", () => {
+    expect(isIdle(1_000_000, 1_000_000 + IDLE_CUTOFF_MS - 1)).toBe(false);
+  });
+
+  it("is idle once the cutoff has elapsed", () => {
+    expect(isIdle(1_000_000, 1_000_000 + IDLE_CUTOFF_MS)).toBe(true);
+  });
+
+  it("outlasts the ladder, so a quiet tab still reaches the slowest rung first", () => {
+    expect(IDLE_CUTOFF_MS).toBeGreaterThan(delayForRung(SLOWEST_RUNG));
   });
 });

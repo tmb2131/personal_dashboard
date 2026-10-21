@@ -45,3 +45,19 @@ export function slower(rung: number): number {
 export function resumeDelayMs(lastRunAt: number, now: number): number {
   return Math.max(lastRunAt + delayForRung(FASTEST_RUNG) - now, 0);
 }
+
+/**
+ * How long the page can go without a click, keypress or focus before polling
+ * stops altogether.
+ *
+ * The ladder only slows the poll; even at its ceiling a visible but forgotten
+ * tab wakes the compute every ten minutes for as long as it stays on screen.
+ * Past this point nobody is looking, so the loop parks until the next sign of
+ * life, which resumes it with an immediate poll to catch up.
+ */
+export const IDLE_CUTOFF_MS = 15 * 60_000;
+
+/** True once the user has been away for at least the cutoff. */
+export function isIdle(lastActivityAt: number, now: number): boolean {
+  return now - lastActivityAt >= IDLE_CUTOFF_MS;
+}

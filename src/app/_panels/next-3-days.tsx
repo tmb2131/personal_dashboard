@@ -104,7 +104,7 @@ export function Next3Days({ groups }: { groups: DayGroupedEvents[] }) {
             return (
               <li key={e.id} className="flex items-baseline gap-1.5 text-[12px]">
                 <span className="w-9 shrink-0 tabular-nums text-fg-muted">
-                  {start ? formatTimeWithSuffix(start) : ""}
+                  {start && !e.allDay ? formatTimeWithSuffix(start) : ""}
                 </span>
                 {summaryNode}
                 {loc && (

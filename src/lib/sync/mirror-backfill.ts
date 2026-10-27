@@ -11,7 +11,7 @@
  * Reconcile now closes that gap on the same cadence it fixes drift.
  */
 
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, notionPageColumns, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
 import { mapBoundedConcurrent } from "@/lib/sync/concurrency";
@@ -71,8 +71,60 @@ function emptySummary(): MirrorBackfillSummary {
   };
 }
 
-export async function createMissingTodoistMirrors(): Promise<MirrorBackfillSummary> {
+/**
+ * How long a claim on a page holds. Notion sends several events for one new
+ * page within seconds of each other; a few minutes covers that burst without
+ * blocking a retry once it is clearly over.
+ */
+const CLAIM_WINDOW = sql`interval '2 minutes'`;
+
+/**
+ * Of `pageIds`, the ones this caller may create a Todoist task for.
+ *
+ * Webhook deliveries for one new page run concurrently, each on its own
+ * function instance, and nothing else stops them all reading "no link yet" and
+ * each calling `addTask`. The DB is Neon over HTTP, so there are no session
+ * locks or transactions to lean on; instead each caller inserts a claim row and
+ * then reads back the earliest one for the page. Both steps commit on their own,
+ * so whoever reads second sees the first's row, and every caller that sees both
+ * agrees on the same earliest `(ts, id)`.
+ */
+async function claimPagesForMirroring(pageIds: string[]): Promise<string[]> {
+  const won: string[] = [];
+  for (const notionPageId of pageIds) {
+    const { id: claimId } = await logAudit({
+      source: "webhook-notion",
+      op: "mirror_claim",
+      payload: { notionPageId },
+    });
+    const [first] = await db
+      .select({ id: schema.auditLog.id })
+      .from(schema.auditLog)
+      .where(
+        and(
+          eq(schema.auditLog.source, "webhook-notion"),
+          eq(schema.auditLog.op, "mirror_claim"),
+          sql`${schema.auditLog.payload}->>'notionPageId' = ${notionPageId}`,
+          sql`${schema.auditLog.ts} > now() - ${CLAIM_WINDOW}`,
+        ),
+      )
+      .orderBy(asc(schema.auditLog.ts), asc(schema.auditLog.id))
+      .limit(1);
+    if (first?.id === claimId) won.push(notionPageId);
+  }
+  return won;
+}
+
+/**
+ * `onlyPageIds` narrows the pass to pages a webhook just synced, so a new Notion
+ * task reaches Todoist in seconds rather than at the next reconcile. It is the
+ * same selection — same eligibility and title-match guard — plus the claim above.
+ */
+export async function createMissingTodoistMirrors(options?: {
+  onlyPageIds?: string[];
+}): Promise<MirrorBackfillSummary> {
   const summary = emptySummary();
+  const onlyPageIds = options?.onlyPageIds;
 
   if (!process.env.TODOIST_TOKEN) {
     summary.error = "TODOIST_TOKEN missing";
@@ -99,6 +151,7 @@ export async function createMissingTodoistMirrors(): Promise<MirrorBackfillSumma
           isNotNull(schema.notionPages.parentId),
           eq(schema.notionPages.archived, false),
           eq(schema.notionPages.ignore, false),
+          onlyPageIds ? inArray(schema.notionPages.id, onlyPageIds) : undefined,
         ),
       ),
     db
@@ -142,7 +195,16 @@ export async function createMissingTodoistMirrors(): Promise<MirrorBackfillSumma
     });
   }
 
+  if (onlyPageIds && selection.create.length) {
+    const claimed = new Set(
+      await claimPagesForMirroring(selection.create.map((p) => p.id)),
+    );
+    selection.create = selection.create.filter((p) => claimed.has(p.id));
+  }
+
   if (!selection.create.length) {
+    // A scoped run fires on every webhook; only log the ones that found something.
+    if (onlyPageIds && summary.candidates === 0) return summary;
     await logAudit({
       source: "reconcile",
       op: "mirror_backfill",

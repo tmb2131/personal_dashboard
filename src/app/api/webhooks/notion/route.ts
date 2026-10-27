@@ -4,6 +4,8 @@ import crypto from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { logAudit } from "@/lib/sync/audit";
+import { adoptExactTitleMatches } from "@/lib/sync/link-adoption";
+import { createMissingTodoistMirrors } from "@/lib/sync/mirror-backfill";
 import { mirrorTodoistFromNotion } from "@/lib/sync/orchestrator";
 import { syncNotion, syncNotionEntitiesByIds } from "@/lib/sync/notion";
 import {
@@ -149,6 +151,28 @@ async function runNotionWebhookWork({
             error: (e as Error).message,
           });
         }
+      }
+      // `mirrorTodoistFromNotion` is a no-op for a page with no `task_links` row,
+      // which is every task newly typed into Notion. Run the reconcile's
+      // create path for just these pages so Todoist hears about them now.
+      try {
+        await adoptExactTitleMatches();
+        const created = await createMissingTodoistMirrors({ onlyPageIds: limitedPageIds });
+        if (created.created || created.errors.length || created.error) {
+          await logAudit({
+            source: "webhook-notion",
+            op: "mirror_created",
+            payload: { fingerprint, eventId: eventIds[0] ?? null, ...created },
+            error: created.error,
+          });
+        }
+      } catch (e) {
+        await logAudit({
+          source: "webhook-notion",
+          op: "mirror_create_error",
+          payload: { fingerprint, eventId: eventIds[0] ?? null, pageIds: limitedPageIds },
+          error: (e as Error).message,
+        });
       }
       await logAudit({
         source: "webhook-notion",

@@ -2,7 +2,6 @@ import { db, notionCategoryColumns, notionPageColumns, schema } from "@/lib/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { bucketKey, isTravelEventsCategory, makeDayBuckets, type DayBucket } from "@/lib/utils";
-import { parseDateOnlyLocal } from "@/lib/date-utils";
 import { extractMeetingUrl } from "@/lib/meeting-url";
 import {
   parseTodoistDue,
@@ -57,7 +56,6 @@ export type Subtask = {
   done: boolean;
   date: Date | null;
   dateHasTime: boolean;
-  deadline: Date | null;
   priority: NotionPage["priority"] | null;
   source: "notion" | "todoist" | "both";
   notionPageId: string | null;
@@ -78,8 +76,8 @@ export type Subtask = {
    */
   dueIsRecurring: boolean;
   /**
-   * Whole days the task has slipped past its date/deadline (≥ 1), or null when
-   * it is not overdue. Only set when every date the task has is before today.
+   * Whole days the task has slipped past its date (≥ 1), or null when it is
+   * not overdue.
    */
   overdueDays: number | null;
   /**
@@ -101,7 +99,6 @@ export type Project = {
   categoryTitle: string | null;
   dateStart: Date | null;
   dateEnd: Date | null;
-  deadline: Date | null;
   keyNextStep: string | null;
   notes: string | null;
   subtasks: Subtask[];
@@ -161,7 +158,7 @@ export type DashboardData = {
   events: CalendarEvent[];
   todayEvents: CalendarEvent[];
   todayTasks: Subtask[];
-  /** Open tasks whose date/deadline is entirely in the past, oldest first */
+  /** Open tasks whose date is in the past, oldest first */
   overdueTasks: Subtask[];
   personalTasks: Subtask[];
   next7DaysTasks: Subtask[];
@@ -211,21 +208,9 @@ function dateInRange(date: Date | null, start: Date, end: Date) {
   return Boolean(date && date >= start && date <= end);
 }
 
-function taskHasDateInRange(date: Date | null, deadline: Date | null, start: Date, end: Date) {
-  return dateInRange(date, start, end) || dateInRange(deadline, start, end);
-}
-
-function taskRangeSortMs(date: Date | null, deadline: Date | null, start: Date, end: Date) {
-  const inRange = [date, deadline].filter((d): d is Date => dateInRange(d, start, end));
-  if (inRange.length > 0) return Math.min(...inRange.map((d) => d.getTime()));
-  return (date ?? deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-}
-
-function parseTodoistDate(value: unknown): Date | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return parseDateOnlyLocal(value);
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+/** Undated tasks sort last. */
+function dateSortMs(date: Date | null): number {
+  return date?.getTime() ?? Number.MAX_SAFE_INTEGER;
 }
 
 function normalizedTitle(title: string | null | undefined): string | null {
@@ -239,18 +224,8 @@ function todoistRawDue(t: TodoistTask): TodoistDueLike {
   return raw?.due ?? null;
 }
 
-function todoistRawDeadline(t: TodoistTask) {
-  const raw = t.raw as { deadline?: { date?: string | null } | null } | null;
-  return raw?.deadline ?? null;
-}
-
 function todoistDueDate(t: TodoistTask): Date | null {
   return t.dueDate ?? parseTodoistDue(todoistRawDue(t));
-}
-
-function todoistDeadlineDate(t: TodoistTask): Date | null {
-  const rawDeadline = todoistRawDeadline(t);
-  return t.deadline ?? parseTodoistDate(rawDeadline?.date);
 }
 
 function todoistDueHasTime(t: TodoistTask): boolean {
@@ -278,7 +253,7 @@ function todoistPriorityToNotion(priority: number): NotionPage["priority"] | nul
 
 /**
  * Due timestamp for the open sub-item treated as "next step" in the Projects panel
- * (in-progress first, then soonest date/deadline). Projects with no dated next step sort last.
+ * (in-progress first, then soonest date). Projects with no dated next step sort last.
  */
 function nextStepSubtaskDueMs(p: Project): number {
   const open = p.subtasks.filter((s) => !s.done);
@@ -286,22 +261,18 @@ function nextStepSubtaskDueMs(p: Project): number {
 
   const sorted = [...open].sort((a, b) => {
     if (a.inProgress !== b.inProgress) return a.inProgress ? -1 : 1;
-    const at = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-    const bt = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const at = dateSortMs(a.date);
+    const bt = dateSortMs(b.date);
     if (at !== bt) return at - bt;
     return a.title.localeCompare(b.title);
   });
 
   if (p.keyNextStep) {
     const match = sorted.find((s) => s.title === p.keyNextStep);
-    if (match) {
-      const t = (match.date ?? match.deadline)?.getTime();
-      if (t != null) return t;
-    }
+    if (match?.date) return match.date.getTime();
   }
 
-  const first = sorted[0];
-  return (first.date ?? first.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+  return dateSortMs(sorted[0].date);
 }
 
 function sortProjectsByNextStepDue(a: Project, b: Project): number {
@@ -387,16 +358,11 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const linkByTodoist = new Map(links.map((l) => [l.todoistTaskId, l]));
   const pageById = new Map(pages.map((p) => [p.id, p]));
 
-  // A task counts as overdue only when every date it has is before today —
-  // a passed scheduled date with a still-upcoming deadline stays in Next 7 Days.
-  function overdueDaysFor(date: Date | null, deadline: Date | null): number | null {
-    const ref = date ?? deadline;
-    if (!ref) return null;
-    if (date && date.getTime() >= todayStart.getTime()) return null;
-    if (deadline && deadline.getTime() >= todayStart.getTime()) return null;
+  function overdueDaysFor(date: Date | null): number | null {
+    if (!date || date.getTime() >= todayStart.getTime()) return null;
     return Math.max(
       1,
-      Math.round((todayStart.getTime() - startOfDay(ref).getTime()) / 86_400_000),
+      Math.round((todayStart.getTime() - startOfDay(date).getTime()) / 86_400_000),
     );
   }
 
@@ -424,7 +390,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         ? categoryById.get(p.categoryId)
         : undefined;
     const date = p.dateStart ?? (matched ? todoistDueDate(matched) : null);
-    const deadline = p.deadline ?? (matched ? todoistDeadlineDate(matched) : null);
     return {
       key: `n:${p.id}`,
       title: p.title,
@@ -433,7 +398,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       done: p.status === "Done" || Boolean(matched?.checked),
       date,
       dateHasTime: Boolean(p.dateIsDatetime || (matched && todoistDueHasTime(matched))),
-      deadline,
       priority: p.priority ?? null,
       source: matched ? "both" : "notion",
       notionPageId: p.id,
@@ -445,7 +409,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       estimateMinutes: null,
       hasRecurringTag: isRecurringProjectTask(matched?.projectId),
       dueIsRecurring: Boolean(matched?.dueIsRecurring),
-      overdueDays: overdueDaysFor(date, deadline),
+      overdueDays: overdueDaysFor(date),
       updatedAt: p.updatedAt ?? null,
     };
   }
@@ -484,7 +448,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       categoryTitle: cat?.title ?? null,
       dateStart: p.dateStart,
       dateEnd: p.dateEnd,
-      deadline: p.deadline,
       keyNextStep: p.keyNextStep,
       notes: p.notes,
       subtasks: subs,
@@ -514,7 +477,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   for (const proj of allProjects) {
     for (const s of proj.subtasks) {
-      if (taskHasDateInRange(s.date, s.deadline, todayStart, todayEnd)) {
+      if (dateInRange(s.date, todayStart, todayEnd)) {
         todayTasks.push(s);
       } else if (!s.done && s.overdueDays != null) {
         overdueTasks.push(s);
@@ -524,7 +487,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       } else if (
         !s.done &&
         !s.hasRecurringTag &&
-        taskHasDateInRange(s.date, s.deadline, tomorrowStart, next7DaysEnd)
+        dateInRange(s.date, tomorrowStart, next7DaysEnd)
       ) {
         next7DaysTasks.push(s);
       }
@@ -543,9 +506,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     const linkedProject = linkedPage?.parentId ? pageById.get(linkedPage.parentId) : linkedPage;
     const todoistProject = t.projectId ? todoistProjectById.get(t.projectId) : undefined;
     const tDueDate = todoistDueDate(t);
-    const tDeadline = todoistDeadlineDate(t);
-    const isDueToday = taskHasDateInRange(tDueDate, tDeadline, todayStart, todayEnd);
-    const tPastDueDays = overdueDaysFor(tDueDate, tDeadline);
+    const isDueToday = dateInRange(tDueDate, todayStart, todayEnd);
+    const tPastDueDays = overdueDaysFor(tDueDate);
     const tOverdueDays = t.checked ? null : tPastDueDays;
     const tCompletedToday = Boolean(
       t.checked && t.updatedAt && t.updatedAt.getTime() >= todayStart.getTime(),
@@ -563,7 +525,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
           done: false,
           date: tDueDate,
           dateHasTime: todoistDueHasTime(t),
-          deadline: tDeadline,
           priority: todoistPriorityToNotion(t.priority),
           source: link ? "both" : "todoist",
           notionPageId: link?.notionPageId ?? null,
@@ -581,7 +542,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       }
     }
 
-    if (!tDueDate && !tDeadline) continue;
+    if (!tDueDate) continue;
 
     if (link && (t.checked || openTodoistIdsAlreadyShown.has(t.id))) continue;
 
@@ -596,7 +557,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         done: true,
         date: tDueDate,
         dateHasTime: todoistDueHasTime(t),
-        deadline: tDeadline,
         priority: todoistPriorityToNotion(t.priority),
         source: "todoist",
         notionPageId: null,
@@ -623,7 +583,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         done: false,
         date: tDueDate,
         dateHasTime: todoistDueHasTime(t),
-        deadline: tDeadline,
         priority: todoistPriorityToNotion(t.priority),
         source: link ? "both" : "todoist",
         notionPageId: link?.notionPageId ?? null,
@@ -644,7 +603,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     if (
       !link &&
       !isDueToday &&
-      taskHasDateInRange(tDueDate, tDeadline, tomorrowStart, next7DaysEnd) &&
+      dateInRange(tDueDate, tomorrowStart, next7DaysEnd) &&
       !t.checked &&
       !isRecurringProjectTask(t.projectId)
     ) {
@@ -656,7 +615,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
         done: false,
         date: tDueDate,
         dateHasTime: todoistDueHasTime(t),
-        deadline: tDeadline,
         priority: todoistPriorityToNotion(t.priority),
         source: "todoist",
         notionPageId: null,
@@ -681,7 +639,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       done: t.checked,
       date: tDueDate,
       dateHasTime: todoistDueHasTime(t),
-      deadline: tDeadline,
       priority: todoistPriorityToNotion(t.priority),
       source: link ? "both" : "todoist",
       notionPageId: link?.notionPageId ?? null,
@@ -699,26 +656,26 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   }
   overdueTasks.sort((a, b) => {
-    const ta = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-    const tb = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const ta = dateSortMs(a.date);
+    const tb = dateSortMs(b.date);
     if (ta !== tb) return ta - tb;
     return a.title.localeCompare(b.title);
   });
   todayTasks.sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
-    const ta = taskRangeSortMs(a.date, a.deadline, todayStart, todayEnd);
-    const tb = taskRangeSortMs(b.date, b.deadline, todayStart, todayEnd);
+    const ta = dateSortMs(a.date);
+    const tb = dateSortMs(b.date);
     return ta - tb;
   });
   personalTasks.sort((a, b) => {
-    const ta = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-    const tb = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const ta = dateSortMs(a.date);
+    const tb = dateSortMs(b.date);
     if (ta !== tb) return ta - tb;
     return a.title.localeCompare(b.title);
   });
   next7DaysTasks.sort((a, b) => {
-    const ta = taskRangeSortMs(a.date, a.deadline, tomorrowStart, next7DaysEnd);
-    const tb = taskRangeSortMs(b.date, b.deadline, tomorrowStart, next7DaysEnd);
+    const ta = dateSortMs(a.date);
+    const tb = dateSortMs(b.date);
     if (ta !== tb) return ta - tb;
     return a.title.localeCompare(b.title);
   });

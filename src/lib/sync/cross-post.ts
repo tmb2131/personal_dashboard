@@ -65,7 +65,7 @@ export async function pushNotionPageToTodoist(
   if (p.archived || p.ignore) throw new Error("Cannot sync archived or ignored tasks");
   if (!notionShouldMirrorToTodoist(p)) {
     throw new Error(
-      "This task needs a date, deadline, focus, or parent before it can appear in Todoist",
+      "This task needs a date, focus, or parent before it can appear in Todoist",
     );
   }
   if (p.status === "Done") throw new Error("Done tasks are not pushed to Todoist");

@@ -17,7 +17,6 @@ function page(over: Partial<MirrorCandidate> & { id: string }): MirrorCandidate 
     dateStart: null,
     dateEnd: null,
     dateIsDatetime: false,
-    deadline: null,
     priority: null,
     focus: null,
     tripStatus: null,
@@ -108,10 +107,10 @@ describe("selectMirrorCandidates", () => {
     const rows = [
       page({ id: "next-week", dateStart: new Date(T0.getTime() + 7 * DAY) }),
       page({ id: "tomorrow", dateStart: new Date(T0.getTime() + DAY) }),
-      page({ id: "by-deadline", deadline: new Date(T0.getTime() + 2 * DAY) }),
+      page({ id: "in-two-days", dateStart: new Date(T0.getTime() + 2 * DAY) }),
     ];
     const result = select(rows, { limit: 2 });
-    expect(ids(result.create)).toEqual(["tomorrow", "by-deadline"]);
+    expect(ids(result.create)).toEqual(["tomorrow", "in-two-days"]);
     expect(ids(result.remaining)).toEqual(["next-week"]);
   });
 

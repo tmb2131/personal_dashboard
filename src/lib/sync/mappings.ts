@@ -44,7 +44,7 @@ export function normalizeTitleForMatch(s: string): string {
 export function notionShouldMirrorToTodoist(p: Omit<NotionPage, "raw">): boolean {
   if (p.archived || p.ignore) return false;
   if (p.status === "Done") return false;
-  return Boolean(p.dateStart || p.deadline || p.focus === "Yes" || p.parentId);
+  return Boolean(p.dateStart || p.focus === "Yes" || p.parentId);
 }
 
 export function notionStatusFromTodoist(t: TodoistTask): NotionPage["status"] {
@@ -60,7 +60,6 @@ export function syncHash(args: {
   title: string;
   status: NotionPage["status"] | null;
   date: Date | null;
-  deadline: Date | null;
   priority: NotionPage["priority"] | null;
   categoryOrProjectId: string | null;
   /**
@@ -75,7 +74,6 @@ export function syncHash(args: {
     content: string;
     checked: boolean;
     dueDate: Date | null;
-    deadline: Date | null;
     priority: number;
   };
 }): string {
@@ -83,7 +81,6 @@ export function syncHash(args: {
     args.title.trim().toLowerCase(),
     args.status ?? "",
     args.date?.toISOString() ?? "",
-    args.deadline?.toISOString() ?? "",
     args.priority ?? "",
     args.categoryOrProjectId ?? "",
   ];
@@ -92,7 +89,6 @@ export function syncHash(args: {
       args.todoist.content.trim().toLowerCase(),
       args.todoist.checked ? "1" : "0",
       args.todoist.dueDate?.toISOString() ?? "",
-      args.todoist.deadline?.toISOString() ?? "",
       String(args.todoist.priority),
     );
   }

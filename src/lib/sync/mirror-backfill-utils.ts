@@ -84,6 +84,5 @@ function bySoonestThenRecent(a: MirrorCandidate, b: MirrorCandidate): number {
 }
 
 function scheduledAtMs(p: MirrorCandidate): number | null {
-  const d = p.dateStart ?? p.deadline;
-  return d ? d.getTime() : null;
+  return p.dateStart ? p.dateStart.getTime() : null;
 }

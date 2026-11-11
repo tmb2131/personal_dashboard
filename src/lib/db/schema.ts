@@ -53,7 +53,6 @@ export const notionPages = pgTable(
     dateStart: timestamp("date_start", { withTimezone: true }),
     dateEnd: timestamp("date_end", { withTimezone: true }),
     dateIsDatetime: boolean("date_is_datetime").notNull().default(false),
-    deadline: timestamp("deadline", { withTimezone: true }),
     priority: notionPriority("priority"),
     focus: notionFocus("focus"),
     tripStatus: notionTripStatus("trip_status"),
@@ -90,7 +89,6 @@ export const todoistTasks = pgTable("todoist_tasks", {
   dueDate: timestamp("due_date", { withTimezone: true }),
   dueString: text("due_string"),
   dueIsRecurring: boolean("due_is_recurring").notNull().default(false),
-  deadline: timestamp("deadline", { withTimezone: true }),
   priority: integer("priority").notNull().default(1), // 1..4 (4 = highest in Todoist)
   checked: boolean("checked").notNull().default(false),
   labels: jsonb("labels").$type<string[]>().notNull().default([]),

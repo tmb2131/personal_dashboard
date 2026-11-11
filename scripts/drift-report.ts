@@ -33,7 +33,6 @@ type TTask = {
   content: string;
   priority: number;
   due?: { date?: string; string?: string } | null;
-  deadline?: { date?: string } | null;
   labels?: string[];
   projectId?: string;
 };
@@ -78,7 +77,6 @@ const title = (p: NPage) => p.properties["Task name"]?.title?.[0]?.plain_text ??
 const status = (p: NPage) => p.properties["Status"]?.status?.name ?? null;
 const prio = (p: NPage) => p.properties["Priority"]?.select?.name ?? null;
 const dateStart = (p: NPage) => p.properties["Date"]?.date?.start ?? null;
-const deadline = (p: NPage) => p.properties["Deadline"]?.date?.start ?? null;
 const flag = (p: NPage, k: string) => Boolean(p.properties[k]?.checkbox);
 const focus = (p: NPage) => p.properties["Focus"]?.select?.name ?? null;
 const hasParent = (p: NPage) => (p.properties["Parent task"]?.relation?.length ?? 0) > 0;
@@ -90,7 +88,7 @@ const P_T2N: Record<number, string | null> = { 1: null, 2: "Low", 3: "Medium", 4
 function shouldMirror(p: NPage) {
   if (p.archived || flag(p, "Archived") || flag(p, "Ignore")) return false;
   if (status(p) === "Done") return false;
-  return Boolean(dateStart(p) || deadline(p) || focus(p) === "Yes" || hasParent(p));
+  return Boolean(dateStart(p) || focus(p) === "Yes" || hasParent(p));
 }
 
 const day = (s: string | null | undefined) => (s ? s.slice(0, 10) : null);
@@ -121,7 +119,7 @@ async function main() {
       continue;
     }
     if (m.length === 0) {
-      if (shouldMirror(p)) notionOnly.push(`${title(p)}  [${status(p)}] date=${day(dateStart(p))} dl=${day(deadline(p))}`);
+      if (shouldMirror(p)) notionOnly.push(`${title(p)}  [${status(p)}] date=${day(dateStart(p))}`);
       continue;
     }
     const t = m[0];
@@ -135,7 +133,6 @@ async function main() {
     const tIP = (t.labels ?? []).includes("in-progress");
     if (nIP !== tIP) diffs.push(`in-progress: Notion=${nIP} Todoist=${tIP}`);
     if (day(dateStart(p)) !== day(t.due?.date)) diffs.push(`date: Notion=${day(dateStart(p))} Todoist=${day(t.due?.date)}`);
-    if (day(deadline(p)) !== day(t.deadline?.date)) diffs.push(`deadline: Notion=${day(deadline(p))} Todoist=${day(t.deadline?.date)}`);
     const nP = prio(p);
     if ((nP ? P_N2T[nP] : 1) !== t.priority) diffs.push(`priority: Notion=${nP ?? "none"} Todoist=${P_T2N[t.priority] ?? "none"}`);
     if (diffs.length) drifted.push(`${title(p)}\n    ${diffs.join("\n    ")}\n    notion=${p.id} todoist=${t.id} notion_edited=${p.last_edited_time}`);

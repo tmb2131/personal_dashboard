@@ -15,10 +15,9 @@ function toDateInputValue(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function dueLabel(date: Date | null, deadline: Date | null): string {
-  const ref = date ?? deadline;
-  if (!ref) return "No due date";
-  return ref.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+function dueLabel(date: Date | null): string {
+  if (!date) return "No due date";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 export function ProjectSubtaskPlanner({
@@ -66,11 +65,10 @@ export function ProjectSubtaskPlanner({
 
   const beginEdit = (task: Project["subtasks"][number]) => {
     if (!task.notionPageId) return;
-    const taskDue = task.date ?? task.deadline;
     setEditingTaskId(task.notionPageId);
     setEditingTitle(task.title);
     setEditingDescription(task.description ?? "");
-    setEditingDueDate(taskDue ? toDateInputValue(taskDue) : "");
+    setEditingDueDate(task.date ? toDateInputValue(task.date) : "");
     setTaskError(null);
   };
 
@@ -213,7 +211,7 @@ export function ProjectSubtaskPlanner({
                         {s.title}
                       </span>
                       <span className="shrink-0 text-[11px] text-fg-subtle">
-                        {dueLabel(s.date, s.deadline)}
+                        {dueLabel(s.date)}
                       </span>
                       {s.notionPageId && (
                         <button

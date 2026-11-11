@@ -39,7 +39,7 @@ export { schema };
  * automatically; only `raw` has to be opted out.
  *
  * Note that the Todoist and gcal `raw` columns *are* read (`raw.due`,
- * `raw.deadline`, meeting URLs), so no equivalent exists for those tables.
+ * meeting URLs), so no equivalent exists for those tables.
  */
 function withoutRaw<T extends { raw: unknown }>(columns: T): Omit<T, "raw"> {
   const rest = { ...columns };

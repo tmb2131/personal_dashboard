@@ -537,15 +537,15 @@ function TripRow({ trip, now }: { trip: Project; now: Date }) {
     .filter((s) => !s.done)
     .sort((a, b) => {
       if (a.inProgress !== b.inProgress) return a.inProgress ? -1 : 1;
-      const at = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-      const bt = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const at = a.date?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const bt = b.date?.getTime() ?? Number.MAX_SAFE_INTEGER;
       if (at !== bt) return at - bt;
       return a.title.localeCompare(b.title);
     })[0];
   const nextStep = trip.keyNextStep ?? fallbackSubtask?.title ?? null;
   const sortedSubtasks = trip.subtasks.filter((s) => !s.done).sort((a, b) => {
-    const at = (a.date ?? a.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-    const bt = (b.date ?? b.deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const at = a.date?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bt = b.date?.getTime() ?? Number.MAX_SAFE_INTEGER;
     if (at !== bt) return at - bt;
     return a.title.localeCompare(b.title);
   });

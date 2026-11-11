@@ -85,7 +85,6 @@ export type NotionTodoRowInput = {
 export function mapTodoPageRow(p: NotionTodoRowInput, syncedAt: Date) {
   const props = p.properties;
   const date = readDate(props, "Date");
-  const deadline = readDate(props, "Deadline");
   return {
     id: p.id,
     categoryId: readRelationFirst(props, "Category"),
@@ -94,7 +93,6 @@ export function mapTodoPageRow(p: NotionTodoRowInput, syncedAt: Date) {
     dateStart: date.start,
     dateEnd: date.end,
     dateIsDatetime: date.isDatetime,
-    deadline: deadline.start,
     priority: (readSelect(props, "Priority") ?? null) as never,
     focus: (readSelect(props, "Focus") ?? null) as never,
     tripStatus: (readStatus(props, "Trip Status") ?? null) as never,
@@ -136,7 +134,6 @@ function notionTodoRowsMatch(existing: NotionPage, next: ReturnType<typeof mapTo
     sameTime(existing.dateStart, next.dateStart) &&
     sameTime(existing.dateEnd, next.dateEnd) &&
     existing.dateIsDatetime === next.dateIsDatetime &&
-    sameTime(existing.deadline, next.deadline) &&
     existing.priority === next.priority &&
     existing.focus === next.focus &&
     existing.tripStatus === next.tripStatus &&
@@ -234,7 +231,6 @@ export async function syncNotion() {
           dateStart: sql`excluded.date_start`,
           dateEnd: sql`excluded.date_end`,
           dateIsDatetime: sql`excluded.date_is_datetime`,
-          deadline: sql`excluded.deadline`,
           priority: sql`excluded.priority`,
           focus: sql`excluded.focus`,
           tripStatus: sql`excluded.trip_status`,
@@ -310,7 +306,6 @@ export async function syncNotionEntitiesByIds(
               dateStart: sql`excluded.date_start`,
               dateEnd: sql`excluded.date_end`,
               dateIsDatetime: sql`excluded.date_is_datetime`,
-              deadline: sql`excluded.deadline`,
               priority: sql`excluded.priority`,
               focus: sql`excluded.focus`,
               tripStatus: sql`excluded.trip_status`,
@@ -629,7 +624,7 @@ export type CreateTodoFromTodoistMirrorInput = {
    */
   task: Pick<
     TodoistTask,
-    "checked" | "labels" | "priority" | "dueDate" | "deadline" | "description" | "raw"
+    "checked" | "labels" | "priority" | "dueDate" | "description" | "raw"
   >;
 };
 
@@ -770,7 +765,6 @@ export async function createTodoPageFromTodoistMirror(
     dueDate: input.task.dueDate,
     dueString: null,
     dueIsRecurring: false,
-    deadline: input.task.deadline,
     priority: input.task.priority,
     checked: input.task.checked,
     labels: input.task.labels ?? [],
@@ -798,7 +792,6 @@ export async function createTodoPageFromTodoistMirror(
   }
 
   const due = input.task.dueDate;
-  const dl = input.task.deadline;
   if (due) {
     // A timed Todoist due has to reach Notion as a datetime. Writing it
     // date-only used to bake the disagreement in permanently: the link row
@@ -808,11 +801,6 @@ export async function createTodoPageFromTodoistMirror(
     const raw = input.task.raw as { due?: TodoistDueLike } | null;
     properties.Date = {
       date: formatNotionDateProp(due, todoistDueHasTime(raw?.due)),
-    };
-  }
-  if (dl && (!due || dl.getTime() !== due.getTime())) {
-    properties.Deadline = {
-      date: formatNotionDateProp(dl, false),
     };
   }
 

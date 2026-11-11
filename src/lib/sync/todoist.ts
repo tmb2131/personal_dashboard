@@ -1,7 +1,6 @@
 import { TodoistApi } from "@doist/todoist-api-typescript";
 import { db, schema } from "@/lib/db";
 import { and, eq, notInArray, sql } from "drizzle-orm";
-import { parseDateOnlyLocal } from "@/lib/date-utils";
 import { parseTodoistDue, type TodoistDueLike } from "@/lib/todoist-due";
 
 let _api: TodoistApi | null = null;
@@ -17,7 +16,6 @@ type TodoistTask = {
   content: string;
   description?: string | null;
   due?: (TodoistDueLike & { string?: string; isRecurring?: boolean }) | null;
-  deadline?: { date?: string } | null;
   priority: number;
   isCompleted?: boolean;
   checked?: boolean;
@@ -119,11 +117,6 @@ function dueToDate(t: TodoistTask): Date | null {
   return parseTodoistDue(t.due);
 }
 
-function deadlineToDate(t: TodoistTask): Date | null {
-  if (t.deadline?.date) return parseDateOnlyLocal(t.deadline.date);
-  return null;
-}
-
 export function mapTodoistTaskToRow(t: TodoistTask, updatedAt: Date) {
   return {
     id: t.id,
@@ -134,7 +127,6 @@ export function mapTodoistTaskToRow(t: TodoistTask, updatedAt: Date) {
     dueDate: dueToDate(t),
     dueString: t.due?.string ?? null,
     dueIsRecurring: Boolean(t.due?.isRecurring),
-    deadline: deadlineToDate(t),
     priority: t.priority ?? 1,
     checked: Boolean(t.isCompleted ?? t.checked),
     labels: t.labels ?? [],
@@ -159,9 +151,9 @@ export function mapTodoistTaskToRow(t: TodoistTask, updatedAt: Date) {
  *   upstream would not register as a change.
  * - `raw` is deliberately absent. Todoist's payload carries fields that differ
  *   on every poll, so including it would mark every row changed and undo the
- *   whole point. The `raw` subtrees anything actually reads (`raw.due`,
- *   `raw.deadline`) are shadowed by the scalar columns compared here, so a
- *   change that matters still lands.
+ *   whole point. The `raw` subtree anything actually reads (`raw.due`) is
+ *   shadowed by the scalar columns compared here, so a change that matters
+ *   still lands.
  */
 const todoistTaskFieldsDiffer = sql`
   ${schema.todoistTasks.projectId} IS DISTINCT FROM excluded.project_id
@@ -171,7 +163,6 @@ const todoistTaskFieldsDiffer = sql`
   OR ${schema.todoistTasks.dueDate} IS DISTINCT FROM excluded.due_date
   OR ${schema.todoistTasks.dueString} IS DISTINCT FROM excluded.due_string
   OR ${schema.todoistTasks.dueIsRecurring} IS DISTINCT FROM excluded.due_is_recurring
-  OR ${schema.todoistTasks.deadline} IS DISTINCT FROM excluded.deadline
   OR ${schema.todoistTasks.priority} IS DISTINCT FROM excluded.priority
   OR ${schema.todoistTasks.checked} IS DISTINCT FROM excluded.checked
   OR ${schema.todoistTasks.labels} IS DISTINCT FROM excluded.labels
@@ -240,7 +231,6 @@ export async function syncTodoist(): Promise<SyncTodoistResult> {
           dueDate: sql`excluded.due_date`,
           dueString: sql`excluded.due_string`,
           dueIsRecurring: sql`excluded.due_is_recurring`,
-          deadline: sql`excluded.deadline`,
           priority: sql`excluded.priority`,
           checked: sql`excluded.checked`,
           labels: sql`excluded.labels`,
@@ -331,7 +321,6 @@ export async function syncTodoistTasksByIds(
             dueDate: sql`excluded.due_date`,
             dueString: sql`excluded.due_string`,
             dueIsRecurring: sql`excluded.due_is_recurring`,
-            deadline: sql`excluded.deadline`,
             priority: sql`excluded.priority`,
             checked: sql`excluded.checked`,
             labels: sql`excluded.labels`,

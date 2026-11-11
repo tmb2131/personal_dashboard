@@ -18,9 +18,6 @@ function timeLabel(day: Date, hhmm: string): string {
  * Due time on a Today row, editable in place. Writes through
  * `setTodoistTaskDueAction`, which keeps the day and swaps only the time, so an
  * overdue task stays overdue.
- *
- * Tasks that land in Today via their deadline alone have no `date` to attach a
- * time to — Todoist deadlines are date-only — so they render nothing.
  */
 export function TaskTimeChip({ t }: { t: Subtask }) {
   const router = useRouter();

@@ -77,8 +77,7 @@ function bySoonestThenRecent(a: NotionMirrorCandidate, b: NotionMirrorCandidate)
 }
 
 function scheduledAtMs(t: NotionMirrorCandidate): number | null {
-  const d = t.dueDate ?? t.deadline;
-  return d ? d.getTime() : null;
+  return t.dueDate ? t.dueDate.getTime() : null;
 }
 
 export type NotionParentChoice = {

@@ -24,7 +24,6 @@ function task(over: Partial<NotionMirrorCandidate> & { id: string }): NotionMirr
     dueDate: null,
     dueString: null,
     dueIsRecurring: false,
-    deadline: null,
     priority: 1,
     checked: false,
     labels: [],
@@ -110,10 +109,10 @@ describe("selectNotionMirrorCandidates", () => {
     const rows = [
       task({ id: "next-week", dueDate: new Date(T0.getTime() + 7 * DAY) }),
       task({ id: "tomorrow", dueDate: new Date(T0.getTime() + DAY) }),
-      task({ id: "by-deadline", deadline: new Date(T0.getTime() + 2 * DAY) }),
+      task({ id: "in-two-days", dueDate: new Date(T0.getTime() + 2 * DAY) }),
     ];
     const result = select(rows, { limit: 2 });
-    expect(ids(result.create)).toEqual(["tomorrow", "by-deadline"]);
+    expect(ids(result.create)).toEqual(["tomorrow", "in-two-days"]);
     expect(ids(result.remaining)).toEqual(["next-week"]);
   });
 

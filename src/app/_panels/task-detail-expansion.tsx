@@ -24,10 +24,9 @@ function toTimeInputValue(d: Date): string {
 }
 
 export function formatTaskDue(t: Subtask): string {
-  const ref = t.date ?? t.deadline;
-  if (!ref) return "No due date";
-  const day = formatRelativeDay(ref);
-  return t.dateHasTime ? `${day} ${formatTimeWithSuffix(ref)}` : day;
+  if (!t.date) return "No due date";
+  const day = formatRelativeDay(t.date);
+  return t.dateHasTime ? `${day} ${formatTimeWithSuffix(t.date)}` : day;
 }
 
 export function TaskDetailExpansion({
@@ -40,7 +39,7 @@ export function TaskDetailExpansion({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const initialDue = t.date ?? t.deadline;
+  const initialDue = t.date;
   const initialTitle = t.title;
   const initialDescription = t.description ?? "";
   const initialDueDate = initialDue ? toDateInputValue(initialDue) : "";

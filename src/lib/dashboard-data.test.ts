@@ -103,7 +103,6 @@ function notionPage(overrides: Record<string, unknown>) {
     dateStart: null,
     dateEnd: null,
     dateIsDatetime: false,
-    deadline: null,
     priority: null,
     focus: null,
     tripStatus: null,
@@ -130,7 +129,6 @@ function todoistTask(overrides: Record<string, unknown>) {
     dueDate: null,
     dueString: null,
     dueIsRecurring: false,
-    deadline: null,
     priority: 1,
     checked: false,
     labels: [],
@@ -269,55 +267,25 @@ describe("loadDashboard", () => {
     );
   });
 
-  it("shows open tasks with a deadline today even when their scheduled date is later", async () => {
+  it("places tasks by their date alone, ignoring a Todoist deadline", async () => {
     rows.todoistTasks = [
       todoistTask({
-        id: "todoist-deadline-today",
+        id: "todoist-later",
         projectId: "todoist-project",
-        content: "Todoist deadline today",
+        content: "Todoist due later",
         dueDate: new Date("2026-05-09T09:00:00.000Z"),
-        deadline: new Date("2026-05-07T17:00:00.000Z"),
-      }),
-    ];
-    rows.notionPages = [
-      notionPage({
-        id: "project",
-        title: "Project",
-      }),
-      notionPage({
-        id: "notion-deadline-today",
-        title: "Notion deadline today",
-        dateStart: new Date("2026-05-09T09:00:00.000Z"),
-        deadline: new Date("2026-05-07T12:00:00.000Z"),
-        parentId: "project",
+        raw: { deadline: { date: "2026-05-07" } },
       }),
     ];
 
     const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
 
-    expect(data.todayTasks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: "Notion deadline today",
-          done: false,
-          source: "notion",
-          notionPageId: "notion-deadline-today",
-        }),
-        expect.objectContaining({
-          title: "Todoist deadline today",
-          done: false,
-          source: "todoist",
-          todoistTaskId: "todoist-deadline-today",
-        }),
-      ]),
-    );
-    expect(data.next7DaysTasks).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ title: "Notion deadline today" }),
-        expect.objectContaining({ title: "Todoist deadline today" }),
-      ]),
-    );
-    expect(data.meta.todayOpenCount).toBe(2);
+    expect(data.todayTasks).toEqual([]);
+    expect(data.overdueTasks).toEqual([]);
+    expect(data.next7DaysTasks).toEqual([
+      expect.objectContaining({ title: "Todoist due later", todoistTaskId: "todoist-later" }),
+    ]);
+    expect(data.meta.todayOpenCount).toBe(0);
   });
 
   it("shows open recurring Todoist tasks due today from the raw due payload", async () => {
@@ -471,26 +439,6 @@ describe("loadDashboard", () => {
     expect(data.next7DaysTasks).toEqual([]);
     expect(data.meta.overdueOpenCount).toBe(2);
     expect(data.meta.overdueOpenRecurringCount).toBe(0);
-  });
-
-  it("keeps a task with a passed date but upcoming deadline in Next 7 Days, not overdue", async () => {
-    rows.notionPages = [
-      notionPage({ id: "project", title: "Project" }),
-      notionPage({
-        id: "notion-deadline-ahead",
-        title: "Passed date, deadline ahead",
-        dateStart: new Date("2026-05-05T09:00:00.000Z"),
-        deadline: new Date("2026-05-10T09:00:00.000Z"),
-        parentId: "project",
-      }),
-    ];
-
-    const data = await loadDashboard(new Date("2026-05-07T08:00:00.000Z"));
-
-    expect(data.overdueTasks).toEqual([]);
-    expect(data.next7DaysTasks).toEqual([
-      expect.objectContaining({ title: "Passed date, deadline ahead", overdueDays: null }),
-    ]);
   });
 
   it("does not duplicate a linked Todoist task whose Notion mirror is already overdue", async () => {

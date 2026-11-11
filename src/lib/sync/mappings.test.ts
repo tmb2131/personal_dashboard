@@ -25,7 +25,6 @@ describe("sync mappings", () => {
       title: "Task one",
       status: "In progress" as const,
       date: new Date("2026-05-07T09:00:00.000Z"),
-      deadline: new Date("2026-05-08T09:00:00.000Z"),
       priority: "High" as const,
       categoryOrProjectId: "proj_1",
     };
@@ -42,7 +41,6 @@ describe("sync mappings", () => {
       title: "Pay Liberty",
       status: "Not started" as const,
       date: new Date("2026-06-24T00:00:00.000Z"),
-      deadline: null,
       priority: null,
       categoryOrProjectId: "proj_1",
     };
@@ -52,7 +50,6 @@ describe("sync mappings", () => {
         content: "Pay Liberty",
         checked: false,
         dueDate: new Date("2026-06-24T00:00:00.000Z"),
-        deadline: null,
         priority: 1,
       },
     });
@@ -62,7 +59,6 @@ describe("sync mappings", () => {
         content: "Pay Liberty",
         checked: false,
         dueDate: new Date("2026-06-26T00:00:00.000Z"),
-        deadline: null,
         priority: 1,
       },
     });

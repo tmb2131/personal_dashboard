@@ -42,6 +42,7 @@ import {
   type NotionBackfillSummary,
 } from "@/lib/sync/notion-backfill";
 import { syncNotion } from "@/lib/sync/notion";
+import { isRemovedInNotion } from "@/lib/sync/link-sync-rules";
 import { hashForPair, mirrorNotionFromTodoist, mirrorTodoistFromNotion } from "@/lib/sync/orchestrator";
 import { refileInboxTasks, type ProjectRefileSummary } from "@/lib/sync/project-refile";
 import { syncTodoist } from "@/lib/sync/todoist";
@@ -239,31 +240,33 @@ async function scanTaskLinks(): Promise<DriftSummary> {
 
       const p = page as NotionPage;
       const t = task as TodoistTask;
-      const currentHash = hashForPair(p, t);
 
-      if (currentHash === link.lastSyncHash && !p.archived && !p.ignore) {
+      // Archived, ignored or deleted in Notion: the only thing left to do is
+      // close the Todoist mirror, and `mirrorTodoistFromNotion` decides that
+      // regardless of timestamps. Once closed, the pair is settled — it used to
+      // be counted as a repair on every run without anything changing.
+      if (isRemovedInNotion(p)) {
+        if (await mirrorTodoistFromNotion(link.notionPageId)) summary.closedArchived++;
+        else summary.inSync++;
+        return;
+      }
+
+      if (hashForPair(p, t) === link.lastSyncHash) {
         summary.inSync++;
         return;
       }
 
-      // Archived/ignored Notion task with an open Todoist mirror — `mirrorTodoistFromNotion`
-      // will close it. Drive in that direction regardless of timestamps.
-      if ((p.archived || p.ignore) && !t.checked) {
-        await mirrorTodoistFromNotion(link.notionPageId);
-        summary.closedArchived++;
-        return;
-      }
-
       // Tie-break by the more recently touched side. Both `updatedAt` columns are bumped
-      // by every upsert / API write, so newer side ≈ authoritative.
+      // by every upsert / API write, so newer side ≈ authoritative. A mirror that finds
+      // nothing to write only refreshes the hash, which is not a repair worth reporting.
       const pageMs = page.updatedAt.getTime();
       const taskMs = task.updatedAt.getTime();
       if (pageMs >= taskMs) {
-        await mirrorTodoistFromNotion(link.notionPageId);
-        summary.mirroredToTodoist++;
+        if (await mirrorTodoistFromNotion(link.notionPageId)) summary.mirroredToTodoist++;
+        else summary.inSync++;
       } else {
-        await mirrorNotionFromTodoist(link.todoistTaskId);
-        summary.mirroredToNotion++;
+        if (await mirrorNotionFromTodoist(link.todoistTaskId)) summary.mirroredToNotion++;
+        else summary.inSync++;
       }
     } catch (e) {
       const msg = (e as Error).message;

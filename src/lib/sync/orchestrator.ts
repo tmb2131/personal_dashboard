@@ -22,7 +22,16 @@ import {
   type NotionPage,
   type TodoistTask,
 } from "@/lib/sync/mappings";
-import { updateNotionTodoFields, updateNotionTodoStatus } from "@/lib/sync/notion";
+import {
+  isNotionObjectNotFound,
+  isRemovedInNotion,
+  shouldCloseTodoistForRemovedPage,
+} from "@/lib/sync/link-sync-rules";
+import {
+  markNotionPagesGone,
+  updateNotionTodoFields,
+  updateNotionTodoStatus,
+} from "@/lib/sync/notion";
 import { mapTodoistTaskToRow } from "@/lib/sync/todoist";
 
 function todoistApi() {
@@ -187,13 +196,58 @@ function buildTodoistFieldDiff(
   return { args, changedFields: changed };
 }
 
-/** After Notion is authoritative in DB: sync Todoist completion, labels, title, due, priority. */
-export async function mirrorTodoistFromNotion(notionPageId: string): Promise<void> {
+type TaskLinkRow = typeof schema.taskLinks.$inferSelect;
+
+/**
+ * Settle a pair whose Notion page was removed (archived, ignored, trashed or
+ * deleted): close the Todoist task when `shouldCloseTodoistForRemovedPage`
+ * says so, and write nothing else in either direction. Resolves `true` when it
+ * closed the task.
+ */
+async function settleRemovedNotionPage(
+  link: TaskLinkRow,
+  task: TodoistTask,
+  reason: "archived" | "ignored" | "deleted",
+): Promise<boolean> {
+  if (!shouldCloseTodoistForRemovedPage(task)) {
+    // Nothing to write. An in-flight marker still has to clear, or the next pass retries.
+    if (link.pendingOrigin != null) await refreshTaskLinkHash(link.id);
+    return false;
+  }
+  try {
+    await todoistApi().closeTask(link.todoistTaskId);
+    await db
+      .update(schema.todoistTasks)
+      .set({ checked: true, updatedAt: new Date() })
+      .where(eq(schema.todoistTasks.id, link.todoistTaskId));
+    await logAudit({
+      source: "orchestrator",
+      op: "todoist.close_from_notion_archived",
+      payload: { notionPageId: link.notionPageId, todoistTaskId: link.todoistTaskId, reason },
+    });
+    await refreshTaskLinkHash(link.id);
+    return true;
+  } catch (e) {
+    await logAudit({
+      source: "orchestrator",
+      op: "mirrorTodoistFromNotion_error",
+      payload: { notionPageId: link.notionPageId },
+      error: (e as Error).message,
+    });
+    throw e;
+  }
+}
+
+/**
+ * After Notion is authoritative in DB: sync Todoist completion, labels, title, due, priority.
+ * Resolves `true` when it wrote to Todoist, so callers can count real repairs only.
+ */
+export async function mirrorTodoistFromNotion(notionPageId: string): Promise<boolean> {
   const [link] = await db
     .select()
     .from(schema.taskLinks)
     .where(eq(schema.taskLinks.notionPageId, notionPageId));
-  if (!link) return;
+  if (!link) return false;
 
   const [page] = await db
     .select()
@@ -203,41 +257,31 @@ export async function mirrorTodoistFromNotion(notionPageId: string): Promise<voi
     .select()
     .from(schema.todoistTasks)
     .where(eq(schema.todoistTasks.id, link.todoistTaskId));
-  if (!page || !task) return;
+  if (!page || !task) return false;
+
+  const p = page as NotionPage;
+
+  // Checked before the echo short-circuit below: the hash has no archived or
+  // ignore bit, so archiving a page changes no hashed field, and the
+  // short-circuit used to swallow the close.
+  if (isRemovedInNotion(p)) {
+    return settleRemovedNotionPage(link, task as TodoistTask, p.archived ? "archived" : "ignored");
+  }
 
   // Echo short-circuit: if both sides already match the hash and there's no in-flight write,
   // a webhook fired by our own previous push has nothing to do.
-  const currentHash = hashForPair(page as NotionPage, task as TodoistTask);
+  const currentHash = hashForPair(p, task as TodoistTask);
   if (link.pendingOrigin == null && currentHash === link.lastSyncHash) {
-    return;
+    return false;
   }
 
-  const p = page as NotionPage;
   const api = todoistApi();
+  let wrote = false;
 
   try {
-    // Archived / ignored Notion task → close the linked Todoist task and bail.
-    if ((p.archived || p.ignore) && !task.checked) {
-      await api.closeTask(link.todoistTaskId);
-      await db
-        .update(schema.todoistTasks)
-        .set({ checked: true, updatedAt: new Date() })
-        .where(eq(schema.todoistTasks.id, link.todoistTaskId));
-      await logAudit({
-        source: "orchestrator",
-        op: "todoist.close_from_notion_archived",
-        payload: {
-          notionPageId,
-          todoistTaskId: link.todoistTaskId,
-          reason: p.archived ? "archived" : "ignored",
-        },
-      });
-      await refreshTaskLinkHash(link.id);
-      return;
-    }
-
     const wantChecked = todoistCheckedFromNotion(p);
     if (wantChecked !== task.checked) {
+      wrote = true;
       if (wantChecked) {
         const wasRecurring = task.dueIsRecurring;
         await api.closeTask(link.todoistTaskId);
@@ -268,12 +312,13 @@ export async function mirrorTodoistFromNotion(notionPageId: string): Promise<voi
       .where(eq(schema.todoistTasks.id, link.todoistTaskId));
     if (!task2 || task2.checked) {
       await refreshTaskLinkHash(link.id);
-      return;
+      return wrote;
     }
 
     // Push title/date/priority deltas in one updateTask call.
     const fieldDiff = buildTodoistFieldDiff(p, task2 as TodoistTask);
     if (fieldDiff) {
+      wrote = true;
       await api.updateTask(link.todoistTaskId, fieldDiff.args as never);
       await refetchAndUpsertTodoistTask(api, link.todoistTaskId);
       await logAudit({
@@ -297,12 +342,14 @@ export async function mirrorTodoistFromNotion(notionPageId: string): Promise<voi
       const prev = task3.labels ?? [];
       const same = merged.length === prev.length && merged.every((l, i) => l === prev[i]);
       if (!same) {
+        wrote = true;
         await api.updateTask(link.todoistTaskId, { labels: merged });
         await refetchAndUpsertTodoistTask(api, link.todoistTaskId);
       }
     }
 
     await refreshTaskLinkHash(link.id);
+    return wrote;
   } catch (e) {
     await logAudit({
       source: "orchestrator",
@@ -372,13 +419,16 @@ function buildNotionFieldDiff(
   return { fields, cachePatch, changedFields: changed };
 }
 
-/** After Todoist is authoritative in DB: sync Notion status, title, due, priority. */
-export async function mirrorNotionFromTodoist(todoistTaskId: string): Promise<void> {
+/**
+ * After Todoist is authoritative in DB: sync Notion status, title, due, priority.
+ * Resolves `true` when it changed anything, so callers can count real repairs only.
+ */
+export async function mirrorNotionFromTodoist(todoistTaskId: string): Promise<boolean> {
   const [link] = await db
     .select()
     .from(schema.taskLinks)
     .where(eq(schema.taskLinks.todoistTaskId, todoistTaskId));
-  if (!link) return;
+  if (!link) return false;
 
   const [page] = await db
     .select()
@@ -388,17 +438,26 @@ export async function mirrorNotionFromTodoist(todoistTaskId: string): Promise<vo
     .select()
     .from(schema.todoistTasks)
     .where(eq(schema.todoistTasks.id, todoistTaskId));
-  if (!page || !task) return;
+  if (!page || !task) return false;
 
-  const currentHash = hashForPair(page as NotionPage, task as TodoistTask);
-  if (link.pendingOrigin == null && currentHash === link.lastSyncHash) {
-    return;
+  const p = page as NotionPage;
+
+  // A removed page takes no writes: Notion refuses edits to trashed pages and a
+  // deleted one is not there. The pair settles the same way whichever side
+  // moved last.
+  if (isRemovedInNotion(p)) {
+    return settleRemovedNotionPage(link, task as TodoistTask, p.archived ? "archived" : "ignored");
   }
 
-  const diff = buildNotionFieldDiff(page as NotionPage, task as TodoistTask);
+  const currentHash = hashForPair(p, task as TodoistTask);
+  if (link.pendingOrigin == null && currentHash === link.lastSyncHash) {
+    return false;
+  }
+
+  const diff = buildNotionFieldDiff(p, task as TodoistTask);
   if (!diff) {
     await refreshTaskLinkHash(link.id);
-    return;
+    return false;
   }
 
   try {
@@ -417,7 +476,21 @@ export async function mirrorNotionFromTodoist(todoistTaskId: string): Promise<vo
       },
     });
     await refreshTaskLinkHash(link.id);
+    return true;
   } catch (e) {
+    if (isNotionObjectNotFound(e)) {
+      // Deleted in Notion without the cache hearing about it. Record that and
+      // settle the pair like any removed page, instead of failing here on
+      // every pass.
+      await markNotionPagesGone([link.notionPageId]);
+      await logAudit({
+        source: "orchestrator",
+        op: "notion.page_gone",
+        payload: { notionPageId: link.notionPageId, todoistTaskId },
+      });
+      await settleRemovedNotionPage(link, task as TodoistTask, "deleted");
+      return true;
+    }
     await logAudit({
       source: "orchestrator",
       op: "mirrorNotionFromTodoist_error",

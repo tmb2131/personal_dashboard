@@ -1,8 +1,10 @@
 import { Client } from "@notionhq/client";
 import { db, schema } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { parseDateOnlyLocalStrict, parseDateTimeLocal } from "@/lib/date-utils";
 import { todoistDueHasTime, type TodoistDueLike } from "@/lib/todoist-due";
+import { logAudit } from "@/lib/sync/audit";
+import { isNotionObjectNotFound, selectVanishedTodoPageIds } from "@/lib/sync/link-sync-rules";
 import {
   notionStatusFromTodoist,
   PRIORITY_TODOIST_TO_NOTION,
@@ -173,13 +175,73 @@ async function queryAll(dataSourceId: string): Promise<DataSourceQueryResp["resu
   return out;
 }
 
+/**
+ * Cached rows a full sync did not see are only checked once they have been
+ * missing this long, so a page created moments ago and not yet in the query
+ * results is left alone.
+ */
+const VANISHED_GRACE_MS = 5 * 60 * 1000;
+/** One `pages.retrieve` each; the rest wait for the next full sync. */
+const VANISHED_CHECKS_PER_SYNC = 10;
+
+/**
+ * Record that Notion no longer has these pages: deleted, or no longer shared
+ * with the integration. They become archived rows, which is how the app
+ * already reads "removed in Notion": hidden from the dashboard, and their
+ * Todoist mirrors closed by the next mirror pass.
+ */
+export async function markNotionPagesGone(pageIds: string[]) {
+  if (!pageIds.length) return;
+  const now = new Date();
+  await db
+    .update(schema.notionPages)
+    .set({ archived: true, updatedAt: now, lastSyncedAt: now })
+    .where(inArray(schema.notionPages.id, pageIds));
+}
+
+/**
+ * Confirm with Notion which unseen cached rows are really gone, and archive
+ * those. See `selectVanishedTodoPageIds` for why absence alone is not enough.
+ * A page that still exists outside the trash is left as it is; any error other
+ * than "not found" proves nothing, so that row waits for the next sync.
+ */
+async function archiveVanishedTodoPages(
+  cached: { id: string; archived: boolean; lastSyncedAt: Date }[],
+  seenIds: Set<string>,
+  syncStartedAt: Date,
+): Promise<number> {
+  const candidates = selectVanishedTodoPageIds({
+    cached,
+    seenIds,
+    syncedBefore: new Date(syncStartedAt.getTime() - VANISHED_GRACE_MS),
+    limit: VANISHED_CHECKS_PER_SYNC,
+  });
+  const gone: string[] = [];
+  for (const pageId of candidates) {
+    try {
+      const page = await client().pages.retrieve({ page_id: pageId });
+      const trashed = page as { in_trash?: boolean; archived?: boolean };
+      if (trashed.in_trash || trashed.archived) gone.push(pageId);
+    } catch (e) {
+      if (isNotionObjectNotFound(e)) gone.push(pageId);
+    }
+  }
+  if (gone.length) {
+    await markNotionPagesGone(gone);
+    await logAudit({ source: "notion-sync", op: "pages_gone", payload: { pageIds: gone } });
+  }
+  return gone.length;
+}
+
 export async function syncNotion() {
+  const syncStartedAt = new Date();
   const [todos, categories] = await Promise.all([
     queryAll(TODOS_DS),
     queryAll(CATEGORIES_DS),
   ]);
 
   const now = new Date();
+  let gone = 0;
 
   if (categories.length) {
     await db
@@ -245,6 +307,18 @@ export async function syncNotion() {
           lastSyncedAt: sql`excluded.last_synced_at`,
         },
       });
+
+    // Housekeeping on top of a sync that already succeeded, so a failure here
+    // is logged rather than failing the sync.
+    try {
+      gone = await archiveVanishedTodoPages(
+        existingPages,
+        new Set(todos.map((p) => p.id)),
+        syncStartedAt,
+      );
+    } catch (e) {
+      await logAudit({ source: "notion-sync", op: "pages_gone_error", error: (e as Error).message });
+    }
   }
 
   await db
@@ -258,7 +332,7 @@ export async function syncNotion() {
       set: { lastFullSyncAt: now },
     });
 
-  return { categories: categories.length, todos: todos.length };
+  return { categories: categories.length, todos: todos.length, gone };
 }
 
 /** Upsert a single page retrieved from the Notion API (todo vs category by presence of `Status`). */
@@ -270,6 +344,7 @@ export async function syncNotionEntitiesByIds(
   let todos = 0;
   let categories = 0;
   const errors: string[] = [];
+  const gone: string[] = [];
   const c = client();
 
   for (const pageId of pageIds) {
@@ -288,7 +363,7 @@ export async function syncNotionEntitiesByIds(
         const row = mapTodoPageRow(
           {
             id: page.id,
-            archived: Boolean(page.archived),
+            archived: Boolean(page.in_trash || page.archived),
             properties: props,
             raw: page,
           },
@@ -325,7 +400,7 @@ export async function syncNotionEntitiesByIds(
         const row = mapCategoryRow(
           {
             id: page.id,
-            archived: Boolean(page.archived),
+            archived: Boolean(page.in_trash || page.archived),
             properties: props,
             raw: page,
           },
@@ -347,9 +422,14 @@ export async function syncNotionEntitiesByIds(
         categories++;
       }
     } catch (e) {
+      // Deleted (or unshared) pages answer "not found". Archive their rows so
+      // the cache stops treating them as live; webhook callers then close the
+      // Todoist mirror like for any removed page.
+      if (isNotionObjectNotFound(e)) gone.push(pageId);
       errors.push(`${pageId}: ${(e as Error).message}`);
     }
   }
+  await markNotionPagesGone(gone);
 
   await db
     .insert(schema.syncState)

@@ -11,7 +11,26 @@ type ReconcileToast = {
   message: string;
 };
 
-function summarize(r: Extract<ReconcileResult, { ok: true }>): ReconcileToast {
+type ReconcileOk = Extract<ReconcileResult, { ok: true }>;
+
+/**
+ * The first per-item failure, with the task it hit when there is one. Without
+ * it the toast can only say "1 error", and the reason sits in the server logs.
+ */
+function firstItemError(r: ReconcileOk): string | null {
+  const first =
+    r.errors[0] ??
+    r.adopted.errors[0] ??
+    r.backfill.errors[0] ??
+    r.notionBackfill.errors[0] ??
+    r.refiled.errors[0];
+  if (!first) return null;
+  const title = "title" in first ? first.title : null;
+  const text = `${title ? `"${title}": ` : ""}${first.error}`;
+  return text.length > 160 ? `${text.slice(0, 157)}…` : text;
+}
+
+function summarize(r: ReconcileOk): ReconcileToast {
   // The refresh mirrors Todoist-side edits into Notion before the drift scan
   // runs, so its count belongs in the same "→ Notion" total the scan reports —
   // otherwise a run whose only work happened there reads as "in sync".
@@ -59,6 +78,8 @@ function summarize(r: Extract<ReconcileResult, { ok: true }>): ReconcileToast {
   if (r.backfill.error) notes.push(`Todoist backfill: ${r.backfill.error}.`);
   if (r.notionBackfill.error) notes.push(`Notion backfill: ${r.notionBackfill.error}.`);
   if (r.refiled.error) notes.push(`Inbox filing: ${r.refiled.error}.`);
+  const itemError = firstItemError(r);
+  if (itemError) notes.push(`First error: ${itemError}`);
   const suffix = notes.length ? ` ${notes.join(" ")}` : "";
 
   if (errorCount) {
@@ -94,7 +115,8 @@ export function ReconcileButton({ className }: { className?: string }) {
 
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => setToast(null), 4200);
+    // Problems stay up long enough to read the error they name.
+    const t = window.setTimeout(() => setToast(null), toast.kind === "success" ? 4200 : 10_000);
     return () => window.clearTimeout(t);
   }, [toast]);
 

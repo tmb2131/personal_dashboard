@@ -23,8 +23,9 @@ export async function reconcileTodoistSyncResult(
 
   for (const id of toMirror) {
     try {
-      await mirrorNotionFromTodoist(id);
-      mirrored++;
+      // Only count real writes: most observed changes are unlinked tasks or
+      // already match Notion, and counting those made "fixed" totals meaningless.
+      if (await mirrorNotionFromTodoist(id)) mirrored++;
     } catch (e) {
       await logAudit({
         source,
